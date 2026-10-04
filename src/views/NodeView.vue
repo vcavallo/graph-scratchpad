@@ -17,7 +17,7 @@ import { subtreeIds } from '@/lib/treeOps'
 import { editing, focusEditor } from '@/state/focus'
 import { prefs } from '@/state/prefs'
 import { openLinkPicker } from '@/lib/linking'
-import { chipClass, chipLabel } from '@/lib/editorDom'
+import { chipClass, chipLabel, type LineMarker, type Shortcut } from '@/lib/editorDom'
 import { confirmDialog, openPicker, openSheet, pickerState, reportError, toast, type SheetAction } from '@/state/ui'
 
 const props = defineProps<{ id: string }>()
@@ -36,6 +36,30 @@ watch(
   },
   { flush: 'sync' },
 )
+
+// Pages that exist mostly to be linked to (places, people, or an item like
+// "waiting" with nothing inside) lead with what links here. Decided once per
+// visit, so adding the first note doesn't make the page jump.
+const linksFirst = ref(false)
+let decided = false
+watch(
+  data,
+  (d) => {
+    if (!d || decided) return
+    decided = true
+    const hub = d.node.kind === 'place' || d.node.kind === 'person'
+    linksFirst.value = hub || (d.tree.children.length === 0 && d.backlinks.length > 0)
+  },
+  { flush: 'sync' },
+)
+
+// Arrived from a row's link count: show what links here.
+watch(data, async (d) => {
+  if (!d || route.query.show !== 'links') return
+  await nextTick()
+  document.querySelector('.backlinks')?.scrollIntoView({ block: 'start' })
+  void router.replace({ query: {} })
+})
 
 const node = computed(() => data.value?.node)
 const kind = computed<Kind>(() => node.value?.kind ?? 'item')
@@ -76,8 +100,30 @@ function titleLink() {
 }
 
 async function toggleDone() {
-  if (!node.value) return
+  if (!node.value || kind.value !== 'item') return
   await api.setDone(props.id, !node.value.done).catch(reportError)
+}
+
+async function toggleTask() {
+  if (!node.value || kind.value !== 'item') return
+  await api.setTask(props.id, !node.value.task).catch(reportError)
+}
+
+/** "[] " / "[x] " / "- " typed at the start of the title. */
+async function onTitleMarker(m: LineMarker) {
+  if (kind.value !== 'item') return
+  try {
+    if (m.done) return await api.setDone(props.id, true)
+    await api.setTask(props.id, m.task)
+    if (m.task) await api.setDone(props.id, false)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+function onTitleShortcut(name: Shortcut) {
+  if (name === 'toggle-done') void toggleDone()
+  else if (name === 'toggle-task') void toggleTask()
 }
 
 async function toggleBacklink(id: string, done: boolean) {
@@ -184,11 +230,27 @@ function openMenu() {
     actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })
   }
   const n = node.value
+  if (kind.value === 'item') {
+    actions.push({
+      label: n.task ? 'Remove the checkbox' : 'Add a checkbox',
+      icon: n.task ? 'dot' : 'checkbox',
+      run: () => void toggleTask(),
+    })
+  }
   actions.push({
     label: n.numbered ? 'Use bullets for this list' : 'Number this list',
     icon: n.numbered ? 'list' : 'numbered',
     run: () => void api.setNumbered(props.id, !n.numbered).catch(reportError),
   })
+  const items = data.value?.tree.children.filter((c) => c.kind === 'item') ?? []
+  if (items.length) {
+    const all = items.every((c) => c.task)
+    actions.push({
+      label: all ? 'Remove checkboxes from this list' : 'Add checkboxes to this list',
+      icon: all ? 'list' : 'checkbox',
+      run: () => outline.value?.setRootChildrenTask(!all),
+    })
+  }
   actions.push({ label: kind.value === 'pad' ? 'Delete pad' : 'Delete', icon: 'trash', danger: true, run: () => void remove() })
   openSheet({ title: titleLabel.value, actions })
 }
@@ -241,7 +303,7 @@ onMounted(async () => {
         </span>
         <div class="title-row">
           <button
-            v-if="kind === 'item'"
+            v-if="kind === 'item' && node.task"
             type="button"
             class="check big"
             role="checkbox"
@@ -264,19 +326,21 @@ onMounted(async () => {
             @arrow="onTitleArrow"
             @at-trigger="(o) => openLinkPicker(titleKey, o, true, id)"
             @paste-lines="(lines) => outline?.addLines(lines)"
+            @marker="onTitleMarker"
+            @shortcut="onTitleShortcut"
             @chip="(cid) => router.push(`/n/${cid}`)"
           />
         </div>
       </div>
 
       <Backlinks
-        v-if="isHub && !node.deleted"
+        v-if="linksFirst && (isHub || data.backlinks.length) && !node.deleted"
         :backlinks="data.backlinks"
-        heading="Linked from"
+        heading="Linked here"
         @toggle="toggleBacklink"
       />
 
-      <h2 v-if="isHub && data.tree.children.length" class="section-title">Notes</h2>
+      <h2 v-if="linksFirst && data.tree.children.length" class="section-title">{{ isHub ? 'Notes' : 'Inside' }}</h2>
       <Outline
         v-if="!node.deleted"
         ref="outline"
@@ -296,15 +360,22 @@ onMounted(async () => {
       </section>
 
       <Backlinks
-        v-if="!isHub && data.backlinks.length && !node.deleted"
+        v-if="!linksFirst && data.backlinks.length && !node.deleted"
         :backlinks="data.backlinks"
-        heading="Linked from"
+        heading="Linked here"
         @toggle="toggleBacklink"
       />
     </template>
 
     <Teleport to="body">
-      <EditToolbar v-if="titleFocused && !pickerState" :structure="false" @link="titleLink" @close="closeKeyboard" />
+      <EditToolbar
+        v-if="titleFocused && !pickerState"
+        :structure="false"
+        :task="kind === 'item' ? (node?.task ?? false) : null"
+        @link="titleLink"
+        @task="toggleTask"
+        @close="closeKeyboard"
+      />
     </Teleport>
   </div>
 </template>

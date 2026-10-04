@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { makeStore, shape } from './helpers'
+import { makeDb, makeStore, shape } from './helpers'
 import type { Store } from '../src/db/store'
 import { MIGRATIONS, LATEST_SCHEMA_VERSION } from '../src/db/migrations'
 import { makeToken } from '../src/lib/tokens'
@@ -661,5 +661,147 @@ describe('numbered lists', () => {
     const old = await makeStore()
     old.importAll({ ...file, schema_version: 2 })
     expect(old.getNode(a)?.numbered).toBe(false)
+  })
+})
+
+describe('to-dos and bullets', () => {
+  const task = (id: string) => s.getNode(id)!.task
+
+  it('new items continue the kind of the item next to them', () => {
+    const a = s.createChild(pad) // the first line of a pad: a to-do
+    expect(task(a)).toBe(true)
+    const note = s.createChild(pad, undefined, { task: false })
+    expect(task(note)).toBe(false)
+    expect(task(s.createChild(pad))).toBe(false) // appended after a bullet
+    expect(task(s.createSibling(a, 'after'))).toBe(true)
+    expect(task(s.createSibling(note, 'before'))).toBe(false)
+    expect(task(s.createChild(pad, null))).toBe(true) // first, ahead of a to-do
+    expect(task(s.createChild(pad, note))).toBe(false) // right after a bullet
+    expect(task(s.splitNode(note, 'no', 'te'))).toBe(false)
+    expect(task(s.createChild(note))).toBe(true) // first child of anything but a place/person
+  })
+
+  it('starts notes under a place or person as bullets', () => {
+    const place = s.createNode('place', 'Shop')
+    expect(task(s.createChild(place))).toBe(false)
+  })
+
+  it('makes items from the link picker bullets', () => {
+    expect(task(s.createInInbox({ text: 'waiting' }))).toBe(false)
+  })
+
+  it('lets only to-dos be done', () => {
+    const note = s.createChild(pad, undefined, { task: false })
+    s.setDone(note, true) // checking off a bullet makes it a to-do
+    expect(s.getNode(note)).toMatchObject({ task: true, done: true })
+    s.setTask(note, false)
+    expect(s.getNode(note)).toMatchObject({ task: false, done: false })
+    s.setTask(note, true)
+    expect(s.getNode(note)).toMatchObject({ task: true, done: false })
+  })
+
+  it('never makes places, people or pads to-dos', () => {
+    const place = s.createNode('place', 'Shop')
+    expect(() => s.setDone(place, true)).toThrow(/Only items/)
+    expect(() => s.setTask(place, true)).toThrow(/Only items/)
+    s.setTask(place, false) // already true: fine
+    expect(task(pad)).toBe(false)
+    const a = s.createChild(pad, undefined, { text: 'x' })
+    s.setDone(a, true)
+    s.setKind(a, 'person')
+    expect(s.getNode(a)).toMatchObject({ task: false, done: false })
+    // Turning a to-do line into a person: the person isn't a to-do, the line still is.
+    const line = s.createChild(pad, undefined, { text: 'Bob' })
+    const hub = s.convertToHub(line, 'person')
+    expect(task(hub)).toBe(false)
+    expect(task(line)).toBe(true)
+  })
+
+  it('switches every item directly inside at once', () => {
+    const { a, a1, a2, a2x } = build(pad, ['a', ['a1', 'a2', ['a2x']]])
+    s.setDone(a1, true)
+    expect(s.setChildrenTask(a, false)).toBe(2)
+    expect([task(a1), task(a2), task(a2x)]).toEqual([false, false, true])
+    expect(s.getNode(a1)!.done).toBe(false)
+    expect(s.setChildrenTask(a, false)).toBe(0)
+  })
+
+  it('lets inserted lines carry their own checkboxes', () => {
+    const a = s.createChild(pad, undefined, { task: false })
+    const [x, y, z] = s.insertMany({ after: a }, [{ text: 'x' }, { text: 'y', task: true, done: true }, { text: 'z' }])
+    expect([task(x), task(y), task(z)]).toEqual([false, true, true])
+    expect(s.getNode(y)!.done).toBe(true)
+    const [w] = s.insertMany({ after: a }, [{ text: 'w', task: false, done: true }])
+    expect(s.getNode(w)).toMatchObject({ task: false, done: false })
+  })
+
+  it('counts only to-dos as open', () => {
+    const { a, b } = build(pad, ['a', 'b'])
+    s.createChild(pad, undefined, { text: 'note', task: false })
+    s.setDone(b, true)
+    expect(s.listPads().find((x) => x.id === pad)).toMatchObject({ itemCount: 3, taskCount: 2, openCount: 1 })
+    const place = s.createNode('place', 'Shop')
+    const t = makeToken(place)
+    s.updateText(a, `a ${t}`)
+    s.updateText(b, `b ${t}`)
+    s.createChild(pad, undefined, { text: `closes at 6 ${t}`, task: false })
+    expect(s.listByKind('place')[0]).toMatchObject({ openBacklinks: 1, totalBacklinks: 3 })
+  })
+
+  it('lists backlinks as open to-dos, then mentions, then done', () => {
+    const place = s.createNode('place', 'Shop')
+    const t = makeToken(place)
+    const done = s.createChild(pad, undefined, { text: `done ${t}` })
+    s.setDone(done, true)
+    const note = s.createChild(pad, undefined, { text: `note ${t}`, task: false })
+    const open = s.createChild(pad, undefined, { text: `open ${t}`, task: true })
+    const other = s.createPad(`pad ${t}`)
+    const order = s.getBacklinks(place).map((b) => b.source.id)
+    expect(order[0]).toBe(open)
+    expect(new Set(order.slice(1, 3))).toEqual(new Set([note, other]))
+    expect(order[3]).toBe(done)
+  })
+
+  it('counts what links to each row, leaving out finished to-dos and deleted lines', () => {
+    const states = s.createPad('States')
+    const waiting = s.createChild(states, undefined, { text: 'waiting', task: false })
+    const t = makeToken(waiting)
+    const { a, b, c } = build(pad, ['a', 'b', 'c'])
+    s.updateText(a, `a ${t}`)
+    s.updateText(b, `b ${t}`)
+    s.updateText(c, `c ${t}`)
+    expect(s.getTree(states).children[0].links).toBe(3)
+    s.setDone(a, true)
+    s.deleteSubtree(b)
+    expect(s.getTree(states).children[0].links).toBe(1)
+    expect(s.getTree(pad).children.map((ch) => ch.links)).toEqual([0, 0])
+  })
+
+  it('migrates older databases: items become to-dos, nothing else stays done', async () => {
+    const db = await makeDb()
+    for (const m of MIGRATIONS.filter((m) => m.version <= 3)) db.exec(m.sql)
+    db.exec("INSERT INTO meta (key, value) VALUES ('schema_version', '3')")
+    const ins = `INSERT INTO nodes (id, kind, text, done, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0)`
+    db.exec(ins, ['i', 'item', 'milk', 1])
+    db.exec(ins, ['j', 'item', 'eggs', 0])
+    db.exec(ins, ['p', 'place', 'Shop', 1])
+    const old = await makeStore(db)
+    expect(old.info().schemaVersion).toBe(LATEST_SCHEMA_VERSION)
+    expect(old.getNode('i')).toMatchObject({ task: true, done: true })
+    expect(old.getNode('j')).toMatchObject({ task: true, done: false })
+    expect(old.getNode('p')).toMatchObject({ task: false, done: false })
+  })
+
+  it('round-trips through export and imports older files as to-dos', async () => {
+    const note = s.createChild(pad, undefined, { text: 'note', task: false })
+    const todo = s.createChild(pad, undefined, { text: 'todo', task: true })
+    const file = JSON.parse(JSON.stringify(s.exportAll()))
+    const fresh = await makeStore()
+    fresh.importAll(file)
+    expect([fresh.getNode(note)!.task, fresh.getNode(todo)!.task]).toEqual([false, true])
+    for (const n of file.nodes) delete n.task
+    const old = await makeStore()
+    old.importAll({ ...file, schema_version: 3 })
+    expect([old.getNode(note)!.task, old.getNode(todo)!.task, old.getNode(pad)!.task]).toEqual([true, true, false])
   })
 })

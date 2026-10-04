@@ -48,6 +48,17 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
     version: 3,
     sql: `ALTER TABLE nodes ADD COLUMN numbered INTEGER NOT NULL DEFAULT 0;`,
   },
+  {
+    // 1 = this item is a to-do (has a checkbox); 0 = a plain bullet. Only items
+    // can be to-dos, and only to-dos can be done. Existing items were all
+    // checkable, so they start as to-dos.
+    version: 4,
+    sql: `
+      ALTER TABLE nodes ADD COLUMN task INTEGER NOT NULL DEFAULT 0;
+      UPDATE nodes SET task = 1 WHERE kind = 'item';
+      UPDATE nodes SET done = 0 WHERE kind <> 'item';
+    `,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

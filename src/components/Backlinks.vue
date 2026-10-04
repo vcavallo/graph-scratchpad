@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from './Icon.vue'
+import KindIcon from './KindIcon.vue'
 import TextView from './TextView.vue'
 import type { Backlink } from '@/db/types'
 import { prefs } from '@/state/prefs'
@@ -10,9 +11,20 @@ const props = defineProps<{ backlinks: Backlink[]; heading: string }>()
 const emit = defineEmits<{ toggle: [id: string, done: boolean] }>()
 const router = useRouter()
 
-const open = computed(() => props.backlinks.filter((b) => !b.source.done))
+// Open to-dos first, then plain mentions (notes, pads, places), then what's done.
+const open = computed(() => props.backlinks.filter((b) => b.source.task && !b.source.done))
+const mentions = computed(() => props.backlinks.filter((b) => !b.source.task))
 const done = computed(() => props.backlinks.filter((b) => b.source.done))
 const showDone = ref(prefs.showDoneBacklinks)
+
+const summary = computed(() => {
+  const parts: string[] = []
+  if (open.value.length) parts.push(`${open.value.length} open`)
+  const m = mentions.value.length
+  if (m) parts.push(`${m} ${m === 1 ? 'mention' : 'mentions'}`)
+  if (done.value.length) parts.push(`${done.value.length} done`)
+  return parts.join(', ')
+})
 
 function setShowDone(v: boolean) {
   showDone.value = v
@@ -26,10 +38,10 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
   <section class="backlinks">
     <h2 class="section-title">
       {{ heading }}
-      <span class="count">{{ open.length }} open{{ done.length ? `, ${done.length} done` : '' }}</span>
+      <span v-if="summary" class="count">{{ summary }}</span>
     </h2>
     <p v-if="!backlinks.length" class="empty-note">Nothing links here yet. Type @ in any list to link to it.</p>
-    <ul class="backlink-list">
+    <ul v-if="open.length" class="backlink-list">
       <li v-for="b in open" :key="b.source.id" class="backlink">
         <button
           type="button"
@@ -41,6 +53,18 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
         >
           <span class="box" />
         </button>
+        <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
+          <div v-if="b.crumbs.length" class="crumbline">{{ crumbText(b) }}</div>
+          <TextView :text="b.source.text" />
+        </div>
+      </li>
+    </ul>
+    <ul v-if="mentions.length" class="backlink-list mentions">
+      <li v-for="b in mentions" :key="b.source.id" class="backlink mention">
+        <span class="backlink-mark" :class="`kind-${b.source.kind}`" aria-hidden="true">
+          <KindIcon v-if="b.source.kind !== 'item'" :kind="b.source.kind" :size="16" />
+          <span v-else class="dot" />
+        </span>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
           <div v-if="b.crumbs.length" class="crumbline">{{ crumbText(b) }}</div>
           <TextView :text="b.source.text" />

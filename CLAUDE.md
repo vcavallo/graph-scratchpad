@@ -57,6 +57,7 @@ Conventions within the model:
 - Deleting a node soft-deletes it and its subtree. Link chips pointing to a deleted node render as struck-through, not as broken tokens.
 - Migration 2 adds `nodes.sort_key`: a fractional key ordering root nodes (pads), since they have no incoming `child` edge to carry order. NULL for everything else.
 - Migration 3 adds `nodes.numbered`: 1 means this node's children are a numbered (ordered) list. The outline shows 1. 2. 3.; the graph lays them out as a column beside the parent, in order (`GraphEdge.index`).
+- Migration 4 adds `nodes.task`: 1 means a to-do (checkbox), 0 a plain bullet note. Invariants: only items can be to-dos, and only to-dos can be done (`setDone(true)` makes a bullet a to-do; `setTask(false)` unchecks). "Open" everywhere means `task = 1 AND done = 0`. A new item copies the to-do flag of the item next to it (`#taskFor`, mirrored by `taskFor` in treeOps); with no neighbouring item it's a to-do, except under a place/person. Items created from the link picker are bullets. `TreeNode.links` counts live incoming links, excluding finished to-dos.
 - Sibling keys are computed against *all* children, including soft-deleted ones, so keys stay unique and restored nodes return to their old position.
 - Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
 - `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once).

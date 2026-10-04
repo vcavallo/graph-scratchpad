@@ -58,22 +58,49 @@ const SLOT_GAP = 36
  * Holds each numbered child in its slot beside its parent. Registered last and
  * it replaces (not adds to) the child's velocity, so link pulls and repulsion
  * can't reorder the column; the parent still moves freely and the column follows.
+ * Column items hardly collide (so they can slide into order), so this also
+ * nudges other nodes out of each column's box, labels included.
  */
 function forceOrdered(strength = 0.35) {
   let edges: SimEdge[] = []
+  let nodes: SimNode[] = []
+  const fixed = (n: SimNode) => n.fx !== undefined && n.fx !== null
   const force = () => {
+    const boxes = new Map<SimNode, { l: number; r: number; t: number; b: number }>()
     for (const e of edges) {
       if (e.slot === undefined) continue
       const p = e.source
       const c = e.target
-      if (c.fx !== undefined && c.fx !== null) continue // being dragged
+      const slotY = p.y + SLOT_DY0 + e.slot * SLOT_GAP
+      const box = boxes.get(p) ?? { l: p.x + SLOT_DX - 14, r: p.x + SLOT_DX, t: slotY - 16, b: slotY + 16 }
+      box.r = Math.max(box.r, p.x + SLOT_DX + c.r + 10 + c.text.length * CHAR_W)
+      box.t = Math.min(box.t, slotY - 16)
+      box.b = Math.max(box.b, slotY + 16)
+      boxes.set(p, box)
+      if (fixed(c)) continue // being dragged
       c.vx = (p.x + SLOT_DX - c.x) * strength
-      c.vy = (p.y + SLOT_DY0 + e.slot * SLOT_GAP - c.y) * strength
+      c.vy = (slotY - c.y) * strength
+    }
+    if (!boxes.size) return
+    for (const n of nodes) {
+      if (n.order !== null || fixed(n)) continue
+      const hw = Math.max(n.r, (n.text.length * CHAR_W) / 2) + 4
+      for (const [p, box] of boxes) {
+        if (p === n) continue
+        const ox = Math.min(n.x + hw, box.r) - Math.max(n.x - hw, box.l)
+        const oy = Math.min(n.y + n.r + 20, box.b) - Math.max(n.y - n.r, box.t)
+        if (ox <= 0 || oy <= 0) continue
+        if (ox < oy) n.vx = (n.vx ?? 0) + (n.x < (box.l + box.r) / 2 ? -ox : ox) * 0.3
+        else n.vy = (n.vy ?? 0) + (n.y < (box.t + box.b) / 2 ? -oy : oy) * 0.3
+      }
     }
   }
   force.links = (l: SimEdge[]) => {
     edges = l
     return force
+  }
+  force.initialize = (n: SimNode[]) => {
+    nodes = n
   }
   return force
 }
@@ -201,7 +228,7 @@ function allVisible(): boolean {
   const box = el.getBoundingClientRect()
   const card = el.parentElement?.querySelector<HTMLElement>('.focus-card')
   const limit = card ? card.getBoundingClientRect().top : box.bottom
-  return Array.from(el.querySelectorAll('.gnode circle.disc')).every((c) => {
+  return Array.from(el.querySelectorAll('.gnode .disc')).every((c) => {
     const r = c.getBoundingClientRect()
     return r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= limit
   })
@@ -222,7 +249,9 @@ function render() {
     .join((enter) => {
       const g = enter.append('g').attr('role', 'button')
       g.append('circle').attr('class', 'hit')
-      g.append('circle').attr('class', 'disc')
+      // A rect so to-dos can be drawn as boxes (small corner radius) and everything else as discs.
+      g.append('rect').attr('class', 'disc')
+      g.append('path').attr('class', 'tick')
       g.append('text').attr('class', 'num').attr('text-anchor', 'middle').attr('dy', '0.35em')
       g.append('text').attr('class', 'label')
       return g
@@ -231,12 +260,27 @@ function render() {
     .attr(
       'class',
       (n) =>
-        `gnode kind-${n.kind}${n.id === focusId.value ? ' center' : ''}${n.done ? ' done' : ''}${n.order !== null ? ' ordered' : ''}`,
+        `gnode kind-${n.kind}${n.id === focusId.value ? ' center' : ''}${n.task ? ' task' : ''}${n.done ? ' done' : ''}${n.order !== null ? ' ordered' : ''}`,
     )
     .attr('aria-label', (n) => n.label || 'Untitled')
   nodes.select('circle.hit').attr('r', (n) => n.r + 12)
-  nodes.select('circle.disc').attr('r', (n) => n.r)
-  nodes.select('text.num').text((n) => (n.order !== null && n.id !== focusId.value ? String(n.order + 1) : ''))
+  nodes
+    .select('rect.disc')
+    .attr('x', (n) => -n.r)
+    .attr('y', (n) => -n.r)
+    .attr('width', (n) => 2 * n.r)
+    .attr('height', (n) => 2 * n.r)
+    .attr('rx', (n) => (n.task ? Math.max(3, n.r * 0.3) : n.r))
+  const numbered = (n: SimNode) => n.order !== null && n.id !== focusId.value
+  // Finished to-dos get a tick, unless the box already shows its number.
+  nodes
+    .select('path.tick')
+    .attr('d', (n) =>
+      n.task && n.done && !numbered(n)
+        ? `M${-n.r * 0.5} ${n.r * 0.05}l${n.r * 0.35} ${n.r * 0.35}l${n.r * 0.65} ${-n.r * 0.7}`
+        : null,
+    )
+  nodes.select('text.num').text((n) => (numbered(n) ? String(n.order! + 1) : ''))
   // Numbered items read like an outline: label to the right. Others: label below.
   nodes
     .select('text.label')
@@ -440,7 +484,8 @@ onBeforeUnmount(() => {
         <div class="focus-text">
           <span class="focus-label">{{ focus.label || 'Untitled' }}</span>
           <span class="focus-meta">
-            {{ KIND_NAMES[focus.kind] }}, {{ data!.nodes.length - 1 }} nearby{{ data?.truncated ? ' (nearest 150)' : '' }}
+            {{ focus.kind === 'item' ? (focus.task ? (focus.done ? 'Done' : 'To-do') : 'Note') : KIND_NAMES[focus.kind] }},
+            {{ data!.nodes.length - 1 }} nearby{{ data?.truncated ? ' (nearest 150)' : '' }}
           </span>
         </div>
         <button type="button" class="btn btn-small btn-primary" @click="openFocus">Open</button>
@@ -449,6 +494,8 @@ onBeforeUnmount(() => {
     <div class="graph-legend">
       <span><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" class="edge-child" /></svg> Nested</span>
       <span><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" class="edge-link" /></svg> Link</span>
+      <span class="legend-node"><svg width="14" height="14"><rect x="1.5" y="1.5" width="11" height="11" rx="2.5" /></svg> To-do</span>
+      <span class="legend-node"><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" /></svg> Note</span>
       <span class="legend-hint">Tap to focus, drag to move</span>
     </div>
   </div>

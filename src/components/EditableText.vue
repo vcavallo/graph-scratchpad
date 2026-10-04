@@ -12,9 +12,12 @@ import {
   renderEditor,
   serialize,
   setCaret,
+  typedMarker,
   updateChips,
   ZWSP,
   type CaretTarget,
+  type LineMarker,
+  type PastedLine,
   type Shortcut,
 } from '@/lib/editorDom'
 import { registerEditor, unregisterEditor, noteBlur, noteFocus, type EditorHandle } from '@/state/focus'
@@ -42,7 +45,9 @@ const emit = defineEmits<{
   shortcut: [name: Shortcut]
   atTrigger: [offset: number]
   chip: [id: string]
-  pasteLines: [lines: string[]]
+  pasteLines: [lines: PastedLine[]]
+  /** "[] ", "[x] " or "- " typed at the start, or a pasted checklist line: switch the line's kind. */
+  marker: [m: LineMarker]
   focus: []
   blur: []
 }>()
@@ -149,6 +154,20 @@ function checkAt() {
   emit('atTrigger', c.start)
 }
 
+/** A Markdown list marker typed at the very start of the line: drop it and report it. */
+function checkMarker(): boolean {
+  const e = el.value
+  if (!e) return false
+  const t = current()
+  const m = typedMarker(t)
+  if (!m) return false
+  const c = getCaret(e)
+  if (!c || c.start !== m.length || c.end !== m.length) return false
+  handle.replace(t.slice(m.length), { caret: 0 })
+  emit('marker', { task: m.task, done: m.done })
+  return true
+}
+
 function onInput(e: Event) {
   const ie = e as InputEvent
   sanitize()
@@ -161,8 +180,9 @@ function onInput(e: Event) {
   }
   updateEmpty()
   schedule()
-  if (!ie.isComposing && (ie.inputType ?? 'insertText').startsWith('insert')) checkAt()
-  else lastAt = -1
+  if (!ie.isComposing && (ie.inputType ?? 'insertText').startsWith('insert')) {
+    if (!checkMarker()) checkAt()
+  } else lastAt = -1
 }
 
 function onCompositionStart() {
@@ -172,7 +192,7 @@ function onCompositionStart() {
 function onCompositionEnd() {
   composing = false
   sanitize()
-  checkAt()
+  if (!checkMarker()) checkAt()
 }
 
 function doEnter() {
@@ -208,7 +228,8 @@ function onKeydown(e: KeyboardEvent) {
   switch (e.key) {
     case 'Enter':
       e.preventDefault()
-      if (mod) emit('shortcut', 'toggle-done')
+      if (mod && e.shiftKey) emit('shortcut', 'toggle-task')
+      else if (mod) emit('shortcut', 'toggle-done')
       else if (!e.shiftKey) doEnter()
       return
     case 'Tab':
@@ -265,7 +286,9 @@ function onPaste(e: ClipboardEvent) {
   }
   const lines = pasteLines(text)
   if (lines.length === 0) return
-  insertText(lines[0])
+  const wasEmpty = current() === ''
+  insertText(lines[0].text)
+  if (wasEmpty && lines[0].task !== undefined) emit('marker', { task: lines[0].task, done: !!lines[0].done })
   if (lines.length > 1) emit('pasteLines', lines.slice(1))
 }
 

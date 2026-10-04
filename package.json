@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "icons": "node scripts/make-icons.mjs",
     "e2e": "node e2e/run.mjs",
+    "screenshots": "node scripts/screenshots.mjs",
     "deploy": "npm run build && npm test && node scripts/deploy.mjs",
     "serve": "node scripts/serve.mjs dist"
   },

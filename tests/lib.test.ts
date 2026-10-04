@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fuzzyScore } from '../src/lib/fuzzy'
 import { labelize, makeToken, parseTokens, splitTokens } from '../src/lib/tokens'
+import { pasteLines, typedMarker } from '../src/lib/editorDom'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -51,5 +52,27 @@ describe('fuzzy', () => {
     expect(fuzzyScore('hdwr', 'Hardware')).not.toBeNull()
     expect(fuzzyScore('cafe', 'Café Olé')).not.toBeNull()
     expect(fuzzyScore('xyz', 'Hardware')).toBeNull()
+  })
+})
+
+describe('list markers', () => {
+  it('recognises markers typed at the start of a line', () => {
+    expect(typedMarker('[] milk')).toEqual({ length: 3, task: true, done: false })
+    expect(typedMarker('[ ] ')).toEqual({ length: 4, task: true, done: false })
+    expect(typedMarker('[x] ')).toEqual({ length: 4, task: true, done: true })
+    expect(typedMarker('- ')).toEqual({ length: 2, task: false, done: false })
+    expect(typedMarker('* ')).toEqual({ length: 2, task: false, done: false })
+    expect(typedMarker('-5 degrees')).toBeNull()
+    expect(typedMarker('a - b')).toBeNull()
+  })
+
+  it('keeps checkboxes from pasted lines and drops other markers', () => {
+    expect(pasteLines('- [ ] milk\n- [x] eggs\n* bread\n\n  plain  \n[] jam')).toEqual([
+      { text: 'milk', task: true, done: false },
+      { text: 'eggs', task: true, done: true },
+      { text: 'bread' },
+      { text: 'plain' },
+      { text: 'jam', task: true, done: false },
+    ])
   })
 })

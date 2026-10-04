@@ -3,7 +3,7 @@
 // before the worker round trip. The next reload replaces this copy with the
 // database's truth, so any divergence heals itself.
 
-import type { Kind, TreeNode } from '@/db/types'
+import type { TreeNode } from '@/db/types'
 
 export interface Located {
   node: TreeNode
@@ -23,8 +23,28 @@ export function locate(root: TreeNode, id: string): Located | null {
   return null
 }
 
-export function newNode(id: string, text = '', kind: Kind = 'item'): TreeNode {
-  return { id, kind, text, done: false, collapsed: false, numbered: false, children: [] }
+export function newNode(id: string, init: { text?: string; task?: boolean; done?: boolean } = {}): TreeNode {
+  const task = init.task ?? false
+  return {
+    id,
+    kind: 'item',
+    text: init.text ?? '',
+    done: task && !!init.done,
+    collapsed: false,
+    numbered: false,
+    task,
+    links: 0,
+    children: [],
+  }
+}
+
+/**
+ * Mirror of the store's #taskFor: a new item is a to-do when the item next to
+ * it is one. With no neighbouring item it's a to-do, except under a place or person.
+ */
+export function taskFor(parent: TreeNode, neighbour: TreeNode | undefined): boolean {
+  if (neighbour?.kind === 'item') return neighbour.task
+  return parent.kind !== 'place' && parent.kind !== 'person'
 }
 
 export function insertSibling(root: TreeNode, siblingId: string, where: 'before' | 'after', node: TreeNode): boolean {
@@ -97,6 +117,8 @@ export interface FlatRow {
   index: number
   /** The parent's children are a numbered list. */
   numbered: boolean
+  /** Checked-off and total to-dos directly inside this row, or null if it has none. */
+  progress: { done: number; total: number } | null
 }
 
 /** Visible rows in document order (children of collapsed nodes skipped). */
@@ -104,6 +126,7 @@ export function flatten(root: TreeNode): FlatRow[] {
   const out: FlatRow[] = []
   const walk = (parent: TreeNode, depth: number) => {
     parent.children.forEach((c, i) => {
+      const tasks = c.children.filter((k) => k.task)
       out.push({
         node: c,
         depth,
@@ -112,6 +135,7 @@ export function flatten(root: TreeNode): FlatRow[] {
         hasChildren: c.children.length > 0,
         index: i,
         numbered: parent.numbered,
+        progress: tasks.length ? { done: tasks.filter((k) => k.done).length, total: tasks.length } : null,
       })
       if (!c.collapsed) walk(c, depth + 1)
     })

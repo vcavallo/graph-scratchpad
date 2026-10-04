@@ -4,7 +4,7 @@ import EditableText from './EditableText.vue'
 import Icon from './Icon.vue'
 import KindIcon from './KindIcon.vue'
 import type { FlatRow } from '@/lib/treeOps'
-import type { Shortcut } from '@/lib/editorDom'
+import type { LineMarker, PastedLine, Shortcut } from '@/lib/editorDom'
 
 const props = defineProps<{ row: FlatRow; active: boolean; save: (id: string, text: string) => Promise<unknown> }>()
 const emit = defineEmits<{
@@ -15,9 +15,11 @@ const emit = defineEmits<{
   shortcut: [row: FlatRow, name: Shortcut]
   atTrigger: [row: FlatRow, offset: number]
   chip: [id: string]
-  pasteLines: [row: FlatRow, lines: string[]]
+  pasteLines: [row: FlatRow, lines: PastedLine[]]
+  marker: [row: FlatRow, m: LineMarker]
   toggle: [row: FlatRow]
   done: [row: FlatRow]
+  links: [row: FlatRow]
 }>()
 
 const node = computed(() => props.row.node)
@@ -27,7 +29,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
 <template>
   <div
     class="row"
-    :class="{ active, done: node.done, numbered: row.numbered, [`kind-${node.kind}`]: true }"
+    :class="{ active, done: node.done, task: node.task, numbered: row.numbered, [`kind-${node.kind}`]: true }"
     :style="{ '--depth': row.depth }"
     :data-id="node.id"
   >
@@ -55,6 +57,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
       <span v-else class="dot" />
     </RouterLink>
     <button
+      v-if="node.task"
       type="button"
       class="check"
       role="checkbox"
@@ -79,6 +82,24 @@ const saveText = (t: string) => props.save(node.value.id, t)
       @at-trigger="(o) => emit('atTrigger', row, o)"
       @chip="(id) => emit('chip', id)"
       @paste-lines="(l) => emit('pasteLines', row, l)"
+      @marker="(m) => emit('marker', row, m)"
     />
+    <span
+      v-if="row.progress"
+      class="row-progress"
+      :class="{ complete: row.progress.done === row.progress.total }"
+      :aria-label="`${row.progress.done} of ${row.progress.total} done`"
+      >{{ row.progress.done }}/{{ row.progress.total }}</span
+    >
+    <button
+      v-if="node.links"
+      type="button"
+      class="row-links"
+      :aria-label="`${node.links} linked here`"
+      @mousedown.prevent
+      @click="emit('links', row)"
+    >
+      <Icon name="linked" :size="15" :stroke="2.2" /><span>{{ node.links }}</span>
+    </button>
   </div>
 </template>

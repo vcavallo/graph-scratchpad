@@ -37,6 +37,10 @@ export interface NodeInit {
   kind?: Kind
   /** Client-chosen id (a UUID), so the UI can render and focus the row before the write lands. */
   id?: string
+  /** A to-do (checkbox) or a plain bullet. Default: like the neighbouring item (see #taskFor). */
+  task?: boolean
+  /** Start checked off (to-dos only), e.g. a pasted "[x] …" line. */
+  done?: boolean
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -50,7 +54,7 @@ interface SiblingRow {
   sort_key: string | null
 }
 
-const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered'
+const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task'
 const MAX_LABEL_DEPTH = 3
 
 export class StoreError extends Error {
@@ -74,6 +78,7 @@ function toInfo(r: RawNode): NodeInfo {
     updated_at: r.updated_at,
     deleted: r.deleted_at !== null,
     numbered: !!r.numbered,
+    task: !!r.task,
   }
 }
 
@@ -189,7 +194,7 @@ export class Store {
     return this.#keyAt(parentId, pos, excludeId, true)
   }
 
-  #insertNode(kind: Kind, text: string, sortKey: string | null = null, wantedId?: string): string {
+  #insertNode(kind: Kind, text: string, sortKey: string | null = null, wantedId?: string, task = false, done = false): string {
     if (wantedId !== undefined) {
       if (!UUID_RE.test(wantedId)) throw new StoreError(`Bad id ${wantedId}`, 'bad_id')
       if (this.#raw(wantedId)) throw new StoreError(`Node ${wantedId} already exists`, 'exists')
@@ -197,13 +202,27 @@ export class Store {
     if (!KINDS.includes(kind)) throw new StoreError(`Unknown kind ${kind}`, 'bad_kind')
     const id = wantedId ?? this.#uuid()
     const t = this.#now()
+    // Only items can be to-dos, and only to-dos can be done.
+    const isTask = kind === 'item' && task
     this.db.exec(
-      `INSERT INTO nodes (id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered)
-       VALUES (?, ?, ?, 0, 0, ?, ?, NULL, ?, 0)`,
-      [id, kind, text, t, t, sortKey],
+      `INSERT INTO nodes (id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task)
+       VALUES (?, ?, ?, ?, 0, ?, ?, NULL, ?, 0, ?)`,
+      [id, kind, text, isTask && done ? 1 : 0, t, t, sortKey, isTask ? 1 : 0],
     )
     if (text) this.#reconcileLinks(id, text)
     return id
+  }
+
+  /**
+   * Whether a new item at this spot is a to-do: the same as the item next to
+   * it, so a checklist continues as a checklist and notes as notes. With no
+   * neighbouring item, a to-do, except under a place or person, where it's a note.
+   */
+  #taskFor(parentId: string, neighbourId: string | null): boolean {
+    const near = neighbourId ? this.#raw(neighbourId) : undefined
+    if (near?.kind === 'item') return near.task === 1
+    const parent = this.#raw(parentId)
+    return !(parent && (parent.kind === 'place' || parent.kind === 'person'))
   }
 
   #insertChildEdge(parentId: string, childId: string, key: string): void {
@@ -339,7 +358,13 @@ export class Store {
       this.#requireLive(parentId)
       const pos: Position = afterSiblingId === undefined ? 'last' : afterSiblingId === null ? 'first' : { after: afterSiblingId }
       const key = this.#keyAt(parentId, pos)
-      const id = this.#insertNode(init.kind ?? 'item', init.text ?? '', null, init.id)
+      let task = init.task
+      if (task === undefined) {
+        const kids = afterSiblingId ? [] : this.#liveChildIds(parentId)
+        const near = afterSiblingId ?? (afterSiblingId === null ? kids[0] : kids[kids.length - 1]) ?? null
+        task = this.#taskFor(parentId, near)
+      }
+      const id = this.#insertNode(init.kind ?? 'item', init.text ?? '', null, init.id, task, init.done)
       this.#insertChildEdge(parentId, id, key)
       return id
     })
@@ -352,7 +377,8 @@ export class Store {
       if (!pe) throw new StoreError('Root nodes have no siblings', 'no_parent')
       this.#requireLive(pe.src)
       const key = this.#keyAt(pe.src, where === 'before' ? { before: siblingId } : { after: siblingId })
-      const id = this.#insertNode(init.kind ?? 'item', init.text ?? '', null, init.id)
+      const task = init.task ?? this.#taskFor(pe.src, siblingId)
+      const id = this.#insertNode(init.kind ?? 'item', init.text ?? '', null, init.id, task, init.done)
       this.#insertChildEdge(pe.src, id, key)
       return id
     })
@@ -426,9 +452,46 @@ export class Store {
     })
   }
 
+  /** Check an item off (or not). Checking off a plain bullet makes it a to-do. */
   setDone(id: string, done: boolean): void {
-    this.#requireLive(id)
-    this.db.exec('UPDATE nodes SET done = ?, updated_at = ? WHERE id = ?', [done ? 1 : 0, this.#now(), id])
+    const n = this.#requireLive(id)
+    if (n.kind !== 'item') throw new StoreError('Only items can be checked off', 'not_item')
+    this.db.exec('UPDATE nodes SET done = ?, task = CASE WHEN ? = 1 THEN 1 ELSE task END, updated_at = ? WHERE id = ?', [
+      done ? 1 : 0,
+      done ? 1 : 0,
+      this.#now(),
+      id,
+    ])
+  }
+
+  /** Make an item a to-do (true) or a plain bullet (false). A bullet can't be done, so that unchecks it. */
+  setTask(id: string, task: boolean): void {
+    const n = this.#requireLive(id)
+    if (n.kind !== 'item') {
+      if (task) throw new StoreError('Only items can be to-dos', 'not_item')
+      return
+    }
+    if (n.task === (task ? 1 : 0)) return
+    this.db.exec('UPDATE nodes SET task = ?, done = CASE WHEN ? = 1 THEN done ELSE 0 END, updated_at = ? WHERE id = ?', [
+      task ? 1 : 0,
+      task ? 1 : 0,
+      this.#now(),
+      id,
+    ])
+  }
+
+  /** setTask for every item directly inside a node. Returns how many changed. */
+  setChildrenTask(parentId: string, task: boolean): number {
+    return this.db.tx(() => {
+      this.#requireLive(parentId)
+      const t = task ? 1 : 0
+      this.db.exec(
+        `UPDATE nodes SET task = ?, done = CASE WHEN ? = 1 THEN done ELSE 0 END, updated_at = ?
+         WHERE kind = 'item' AND task <> ? AND id IN (SELECT value FROM json_each(?))`,
+        [t, t, this.#now(), t, JSON.stringify(this.#liveChildIds(parentId))],
+      )
+      return this.db.get<{ c: number }>('SELECT changes() AS c')?.c ?? 0
+    })
   }
 
   /** Show this node's children as a numbered list (true) or bullets (false). */
@@ -450,9 +513,13 @@ export class Store {
       const hasParent = !!this.#parentEdge(id)
       if (kind === 'pad' && hasParent) throw new StoreError('A pad cannot have a parent', 'pad_parent')
       const sortKey = kind === 'pad' ? (n.sort_key ?? this.#rootKeyAfterLast()) : n.sort_key
-      this.db.exec('UPDATE nodes SET kind = ?, sort_key = ?, updated_at = ? WHERE id = ?', [
+      // Only items are to-dos; anything else is never checked off.
+      const keep = kind === 'item'
+      this.db.exec('UPDATE nodes SET kind = ?, sort_key = ?, task = ?, done = ?, updated_at = ? WHERE id = ?', [
         kind,
         sortKey,
+        keep ? n.task : 0,
+        keep ? n.done : 0,
         this.#now(),
         id,
       ])
@@ -665,8 +732,9 @@ export class Store {
     })
   }
 
+  /** Items made from the link picker are things to link to, so they start as plain bullets. */
   createInInbox(init: NodeInit = {}): string {
-    return this.db.tx(() => this.createChild(this.inboxId(), undefined, init))
+    return this.db.tx(() => this.createChild(this.inboxId(), undefined, { task: false, ...init }))
   }
 
   /** On a brand-new database, create a short welcome pad. Returns its id, or null. */
@@ -678,16 +746,18 @@ export class Store {
       this.db.exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1')`)
       const pad = this.createPad('Welcome')
       const store = this.createNode('place', 'Hardware store')
-      const add = (parent: string, text: string) => this.createChild(parent, undefined, { text })
+      const add = (parent: string, text: string, task = false) => this.createChild(parent, undefined, { text, task })
       add(pad, 'Tap any line to edit it. Enter starts a new line.')
       const tb = add(pad, 'The bar above the keyboard indents, outdents and moves lines')
       add(tb, 'Like this nested line')
-      const proj = add(pad, 'Fix the sprinkler')
-      add(proj, `Buy 3/4-inch PVC elbows at [[${store}]]`)
-      add(proj, `Pick up teflon tape at [[${store}]]`)
+      add(pad, 'Lines are notes, like these, or to-dos. The checkbox button in that bar switches a line.')
+      const proj = add(pad, 'Fix the sprinkler', true)
+      add(proj, `Buy 3/4-inch PVC elbows at [[${store}]]`, true)
+      add(proj, `Pick up teflon tape at [[${store}]]`, true)
       add(pad, 'Type @ to link to any item, place or person. Tap a link to open it.')
       add(pad, 'Tap a bullet to open that item and see what links to it')
       add(pad, 'Settings → Export saves a backup of everything')
+      add(store, 'Closes at 6 on Sundays')
       return pad
     })
   }
@@ -707,7 +777,9 @@ export class Store {
 
   /** The node and its live descendants as a nested tree. */
   getTree(rootId: string): TreeNode {
-    const rows = this.db.all<RawNode & { parent: string | null; edge_key: string | null; edge_id: string | null }>(
+    const rows = this.db.all<
+      RawNode & { parent: string | null; edge_key: string | null; edge_id: string | null; links: number }
+    >(
       `WITH RECURSIVE sub(id) AS (
          SELECT ?
          UNION
@@ -715,7 +787,9 @@ export class Store {
          WHERE e.type = 'child' AND c.deleted_at IS NULL
        )
        SELECT n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key,
-              n.numbered, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id
+              n.numbered, n.task, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id,
+              (SELECT count(*) FROM edges l JOIN nodes s ON s.id = l.src
+                 WHERE l.dst = n.id AND l.type = 'link' AND s.deleted_at IS NULL AND s.done = 0) AS links
        FROM sub JOIN nodes n ON n.id = sub.id
        LEFT JOIN edges pe ON pe.dst = n.id AND pe.type = 'child'`,
       [rootId],
@@ -729,6 +803,8 @@ export class Store {
         done: !!r.done,
         collapsed: !!r.collapsed,
         numbered: !!r.numbered,
+        task: !!r.task,
+        links: r.links,
         children: [],
         _key: r.edge_key ?? '',
         _edge: r.edge_id ?? '',
@@ -751,6 +827,8 @@ export class Store {
         done: t.done,
         collapsed: t.collapsed,
         numbered: t.numbered,
+        task: t.task,
+        links: t.links,
         children: kids.map(strip),
       }
     }
@@ -786,8 +864,16 @@ export class Store {
     for (const id of ids) {
       const r = res.rows.get(id)
       out[id] = r
-        ? { id, kind: r.kind, label: res.label(id) ?? '', done: !!r.done, deleted: r.deleted_at !== null, exists: true }
-        : { id, kind: 'item', label: 'missing', done: false, deleted: true, exists: false }
+        ? {
+            id,
+            kind: r.kind,
+            label: res.label(id) ?? '',
+            done: !!r.done,
+            task: !!r.task,
+            deleted: r.deleted_at !== null,
+            exists: true,
+          }
+        : { id, kind: 'item', label: 'missing', done: false, task: false, deleted: true, exists: false }
     }
     return out
   }
@@ -805,8 +891,10 @@ export class Store {
     )
     const out = rows.map((r) => ({ source: toInfo(r), crumbs: this.getAncestors(r.id) }))
     const pathOf = (b: Backlink) => b.crumbs.map((c) => c.label).join('\u0000').toLowerCase()
+    // Open to-dos, then plain mentions, then finished to-dos.
+    const rank = (b: Backlink) => (b.source.done ? 2 : b.source.task ? 0 : 1)
     out.sort((a, b) => {
-      if (a.source.done !== b.source.done) return a.source.done ? 1 : -1
+      if (rank(a) !== rank(b)) return rank(a) - rank(b)
       const pa = pathOf(a)
       const pb = pathOf(b)
       if (pa !== pb) return pa < pb ? -1 : 1
@@ -849,7 +937,7 @@ export class Store {
     const pads = this.db.all<RawNode>(
       `SELECT ${NODE_COLS} FROM nodes WHERE kind = 'pad' AND deleted_at IS NULL ORDER BY sort_key, id`,
     )
-    const counts = this.db.all<{ pad: string; items: number; open: number }>(
+    const counts = this.db.all<{ pad: string; items: number; tasks: number; open: number }>(
       `WITH RECURSIVE d(pad, id) AS (
          SELECT id, id FROM nodes WHERE kind = 'pad' AND deleted_at IS NULL
          UNION ALL
@@ -857,7 +945,8 @@ export class Store {
          WHERE e.type = 'child' AND c.deleted_at IS NULL
        )
        SELECT d.pad AS pad, count(*) - 1 AS items,
-              sum(CASE WHEN n.done = 0 AND n.id != d.pad THEN 1 ELSE 0 END) AS open
+              sum(CASE WHEN n.task = 1 AND n.id != d.pad THEN 1 ELSE 0 END) AS tasks,
+              sum(CASE WHEN n.task = 1 AND n.done = 0 AND n.id != d.pad THEN 1 ELSE 0 END) AS open
        FROM d JOIN nodes n ON n.id = d.id GROUP BY d.pad`,
     )
     const byPad = new Map(counts.map((c) => [c.pad, c]))
@@ -868,6 +957,7 @@ export class Store {
       text: p.text,
       label: res.label(p.id) ?? '',
       itemCount: byPad.get(p.id)?.items ?? 0,
+      taskCount: byPad.get(p.id)?.tasks ?? 0,
       openCount: byPad.get(p.id)?.open ?? 0,
       updated_at: p.updated_at,
     }))
@@ -909,7 +999,7 @@ export class Store {
          (SELECT count(*) FROM edges e JOIN nodes s ON s.id = e.src
             WHERE e.dst = n.id AND e.type = 'link' AND s.deleted_at IS NULL) AS total,
          (SELECT count(*) FROM edges e JOIN nodes s ON s.id = e.src
-            WHERE e.dst = n.id AND e.type = 'link' AND s.deleted_at IS NULL AND s.done = 0) AS open
+            WHERE e.dst = n.id AND e.type = 'link' AND s.deleted_at IS NULL AND s.task = 1 AND s.done = 0) AS open
        FROM nodes n WHERE n.kind = ? AND n.deleted_at IS NULL`,
       [kind],
     )
@@ -1025,6 +1115,7 @@ export class Store {
       kind: refs[n].kind,
       label: refs[n].label,
       done: refs[n].done,
+      task: refs[n].task,
       hop: hopOf.get(n)!,
     }))
     return { center: id, nodes, edges, truncated }
@@ -1097,8 +1188,20 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       for (const n of file.nodes) {
         this.db.exec(
-          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key, n.numbered],
+          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            n.id,
+            n.kind,
+            n.text,
+            n.done,
+            n.collapsed,
+            n.created_at,
+            n.updated_at,
+            n.deleted_at,
+            n.sort_key,
+            n.numbered,
+            n.task,
+          ],
         )
       }
       for (const e of file.edges) {
@@ -1149,17 +1252,20 @@ export function validateExport(data: unknown): ExportFile {
     ids.add(n.id)
     const kind = KINDS.includes(n.kind as Kind) ? (n.kind as Kind) : 'item'
     const created = isNum(n.created_at) ? n.created_at : 0
+    // Exports from before to-dos existed: every item was checkable.
+    const task = kind === 'item' && (n.task === undefined ? true : !!n.task)
     nodes.push({
       id: n.id,
       kind,
       text: isStr(n.text) ? n.text : '',
-      done: n.done ? 1 : 0,
+      done: task && n.done ? 1 : 0,
       collapsed: n.collapsed ? 1 : 0,
       created_at: created,
       updated_at: isNum(n.updated_at) ? n.updated_at : created,
       deleted_at: isNum(n.deleted_at) ? n.deleted_at : null,
       sort_key: isStr(n.sort_key) ? n.sort_key : null,
       numbered: n.numbered ? 1 : 0,
+      task: task ? 1 : 0,
     })
   }
 

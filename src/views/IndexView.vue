@@ -6,6 +6,7 @@ import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
 import { api } from '@/db/api'
 import { useLoader } from '@/composables/useLoader'
+import type { IndexEntry } from '@/db/types'
 import { reportError } from '@/state/ui'
 
 const props = defineProps<{ kind: 'place' | 'person' }>()
@@ -13,6 +14,11 @@ const router = useRouter()
 const { data: entries, loading } = useLoader(() => api.listByKind(props.kind))
 
 const title = computed(() => (props.kind === 'place' ? 'Places' : 'People'))
+
+function meta(e: IndexEntry): string {
+  if (e.openBacklinks) return `${e.openBacklinks} open`
+  return e.totalBacklinks ? `${e.totalBacklinks} linked` : 'Nothing linked'
+}
 const name = ref('')
 
 function add() {
@@ -53,7 +59,7 @@ function add() {
         <RouterLink :to="`/n/${e.id}`" class="list-main">
           <KindIcon :kind="e.kind" />
           <span class="list-label">{{ e.label || 'Untitled' }}</span>
-          <span class="list-meta" :class="{ hot: e.openBacklinks > 0 }">{{ e.openBacklinks }} open</span>
+          <span class="list-meta" :class="{ hot: e.openBacklinks > 0 }">{{ meta(e) }}</span>
         </RouterLink>
       </li>
     </ul>

@@ -12,7 +12,7 @@ import Icon from './Icon.vue'
 import { api } from '@/db/api'
 import type { Kind, TreeNode } from '@/db/types'
 import * as T from '@/lib/treeOps'
-import type { CaretTarget, Shortcut } from '@/lib/editorDom'
+import type { CaretTarget, LineMarker, PastedLine, Shortcut } from '@/lib/editorDom'
 import { openLinkPicker } from '@/lib/linking'
 import { editing, focusEditor, getEditor } from '@/state/focus'
 import { openPicker, openSheet, pickerState, reportError, toast, type SheetAction } from '@/state/ui'
@@ -54,6 +54,7 @@ const toolbarState = computed(() => {
     canOutdent: r.depth > 0,
     canUp: index > 0,
     canDown: index < siblings - 1,
+    task: r.node.kind === 'item' ? r.node.task : null,
   }
 })
 
@@ -105,24 +106,27 @@ function onEnter(row: T.FlatRow, { before, after }: { before: string; after: str
     return
   }
   const nid = crypto.randomUUID()
+  // A new line is a to-do if the line it comes from is one.
+  const task = T.taskFor(T.locate(local.value, id)?.parent ?? local.value, row.node)
   if (!after) {
     void ed?.flush()
     if (row.hasChildren && !row.node.collapsed) {
-      T.insertChild(local.value, id, 'first', T.newNode(nid))
-      sync(api.createChild(id, null, { id: nid }))
+      const firstTask = T.taskFor(row.node, row.node.children[0])
+      T.insertChild(local.value, id, 'first', T.newNode(nid, { task: firstTask }))
+      sync(api.createChild(id, null, { id: nid, task: firstTask }))
     } else {
-      T.insertSibling(local.value, id, 'after', T.newNode(nid))
-      sync(api.createSibling(id, 'after', { id: nid }))
+      T.insertSibling(local.value, id, 'after', T.newNode(nid, { task }))
+      sync(api.createSibling(id, 'after', { id: nid, task }))
     }
     focusRow(nid, 'start')
   } else if (!before) {
     void ed?.flush()
-    T.insertSibling(local.value, id, 'before', T.newNode(nid))
-    sync(api.createSibling(id, 'before', { id: nid }))
+    T.insertSibling(local.value, id, 'before', T.newNode(nid, { task }))
+    sync(api.createSibling(id, 'before', { id: nid, task }))
   } else {
     ed?.replace(before, { saved: true })
     row.node.text = before
-    T.insertSibling(local.value, id, 'after', T.newNode(nid, after))
+    T.insertSibling(local.value, id, 'after', T.newNode(nid, { text: after, task }))
     sync(api.splitNode(id, before, after, nid))
     focusRow(nid, 'start')
   }
@@ -198,8 +202,46 @@ function doMove(id: string, dir: 'up' | 'down') {
 }
 
 function toggleDone(row: T.FlatRow) {
-  row.node.done = !row.node.done
-  sync(api.setDone(row.node.id, row.node.done))
+  const n = row.node
+  if (n.kind !== 'item') return
+  n.done = !n.done
+  if (n.done) n.task = true // checking off a bullet makes it a to-do
+  sync(api.setDone(n.id, n.done))
+}
+
+/** Switch a line between a to-do (checkbox) and a plain bullet. */
+function setTask(n: TreeNode, task: boolean, done = false) {
+  if (n.kind !== 'item') return
+  const wasDone = n.done
+  if (n.task === task && wasDone === (task && done)) return
+  n.task = task
+  n.done = task && done
+  if (n.done) sync(api.setDone(n.id, true))
+  else if (task && wasDone) sync(api.setDone(n.id, false))
+  else sync(api.setTask(n.id, task)) // becoming a bullet also unchecks it
+}
+
+function toggleTask(row: T.FlatRow) {
+  setTask(row.node, !row.node.task)
+}
+
+function onMarker(row: T.FlatRow, m: LineMarker) {
+  setTask(row.node, m.task, m.done)
+}
+
+function setChildrenTask(n: TreeNode, task: boolean) {
+  for (const c of n.children) {
+    if (c.kind !== 'item') continue
+    c.task = task
+    if (!task) c.done = false
+  }
+  sync(api.setChildrenTask(n.id, task))
+}
+
+/** True when every item directly inside is a to-do (and there is at least one item). */
+function allTasks(n: TreeNode): boolean {
+  const items = n.children.filter((c) => c.kind === 'item')
+  return items.length > 0 && items.every((c) => c.task)
 }
 
 function setCollapsed(row: T.FlatRow, collapsed: boolean) {
@@ -223,6 +265,8 @@ function onShortcut(row: T.FlatRow, name: Shortcut) {
   switch (name) {
     case 'toggle-done':
       return toggleDone(row)
+    case 'toggle-task':
+      return toggleTask(row)
     case 'move-up':
       return doMove(row.node.id, 'up')
     case 'move-down':
@@ -234,12 +278,17 @@ function onShortcut(row: T.FlatRow, name: Shortcut) {
   }
 }
 
-function onPasteLines(row: T.FlatRow, lines: string[]) {
+/** Pasted lines keep their checkboxes; lines without one follow the line they're pasted into. */
+function pastedItems(lines: PastedLine[], task: boolean) {
+  return lines.map((l) => ({ id: crypto.randomUUID(), text: l.text, task: l.task ?? task, done: !!l.done }))
+}
+
+function onPasteLines(row: T.FlatRow, lines: PastedLine[]) {
   void getEditor(key(row.node.id))?.flush()
-  const items = lines.map((text) => ({ id: crypto.randomUUID(), text }))
+  const items = pastedItems(lines, T.taskFor(T.locate(local.value, row.node.id)?.parent ?? local.value, row.node))
   let after = row.node.id
   for (const it of items) {
-    T.insertSibling(local.value, after, 'after', T.newNode(it.id, it.text))
+    T.insertSibling(local.value, after, 'after', T.newNode(it.id, it))
     after = it.id
   }
   sync(api.insertMany({ after: row.node.id }, items))
@@ -317,7 +366,7 @@ function convertToHub(row: T.FlatRow, kind: 'place' | 'person') {
   void ed?.flush()
   const hubId = crypto.randomUUID()
   const label = labelize(original, (id) => refCache[id]?.label).replace(/\s+/g, ' ').trim() || 'Untitled'
-  mergeRefs({ [hubId]: { id: hubId, kind, label, done: false, deleted: false, exists: true } })
+  mergeRefs({ [hubId]: { id: hubId, kind, label, done: false, task: false, deleted: false, exists: true } })
   const token = makeToken(hubId)
   n.text = token
   ed?.replace(token, { saved: true })
@@ -354,6 +403,14 @@ function openMore(row: T.FlatRow) {
         run: () => setNumbered(n, !n.numbered),
       },
     )
+    if (n.children.some((c) => c.kind === 'item')) {
+      const all = allTasks(n)
+      actions.push({
+        label: all ? 'Remove checkboxes from the items inside' : 'Add checkboxes to the items inside',
+        icon: all ? 'list' : 'checkbox',
+        run: () => setChildrenTask(n, !all),
+      })
+    }
   }
   if (n.kind === 'item') {
     actions.push(
@@ -388,16 +445,18 @@ function onChip(id: string) {
 /** Add a new first child (Enter in the title) or last child (the add button). */
 function addChild(position: 'first' | 'last') {
   const nid = crypto.randomUUID()
-  T.insertChild(local.value, local.value.id, position, T.newNode(nid))
-  sync(api.createChild(local.value.id, position === 'first' ? null : undefined, { id: nid }))
+  const kids = local.value.children
+  const task = T.taskFor(local.value, position === 'first' ? kids[0] : kids[kids.length - 1])
+  T.insertChild(local.value, local.value.id, position, T.newNode(nid, { task }))
+  sync(api.createChild(local.value.id, position === 'first' ? null : undefined, { id: nid, task }))
   focusRow(nid, 'start')
 }
 
 /** Lines pasted into the title become the first items, in order. */
-function addLines(lines: string[]) {
-  const items = lines.map((text) => ({ id: crypto.randomUUID(), text }))
+function addLines(lines: PastedLine[]) {
+  const items = pastedItems(lines, T.taskFor(local.value, local.value.children[0]))
   items.forEach((it, i) => {
-    const node = T.newNode(it.id, it.text)
+    const node = T.newNode(it.id, it)
     if (i === 0) T.insertChild(local.value, local.value.id, 'first', node)
     else T.insertSibling(local.value, items[i - 1].id, 'after', node)
   })
@@ -412,7 +471,12 @@ function focusFirst(): boolean {
   return true
 }
 
-defineExpose({ addChild, addLines, focusFirst })
+/** The page menu's "checkboxes for this list". */
+function setRootChildrenTask(task: boolean) {
+  setChildrenTask(local.value, task)
+}
+
+defineExpose({ addChild, addLines, focusFirst, setRootChildrenTask })
 </script>
 
 <template>
@@ -433,6 +497,8 @@ defineExpose({ addChild, addLines, focusFirst })
       @paste-lines="onPasteLines"
       @toggle="(r) => setCollapsed(r, !r.node.collapsed)"
       @done="toggleDone"
+      @marker="onMarker"
+      @links="(r) => router.push({ path: `/n/${r.node.id}`, query: { show: 'links' } })"
     />
     <button type="button" class="add-row" @click="addChild('last')">
       <Icon name="plus" :size="18" />
@@ -447,6 +513,7 @@ defineExpose({ addChild, addLines, focusFirst })
         @up="doMove(activeRow!.node.id, 'up')"
         @down="doMove(activeRow!.node.id, 'down')"
         @link="onToolbarLink"
+        @task="toggleTask(activeRow!)"
         @more="openMore(activeRow!)"
         @close="closeKeyboard"
       />

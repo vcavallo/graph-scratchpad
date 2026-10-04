@@ -31,6 +31,13 @@ await page.keyboard.type('today')
 await sleep(100)
 assert((await outline(page)).at(-1) === 'Get hose clamps at [Hardware store] today', 'typing continues after chip: ' + (await outline(page)).at(-1))
 
+// The Welcome pad ends in notes, so a line added there is a note; make it a to-do.
+assert(!(await page.isVisible('.row.active .check')), 'a line added after notes is a note')
+await page.tap('[aria-label="Checkbox"]')
+await sleep(200)
+assert(await page.isVisible('.row.active .check'), 'toolbar checkbox makes it a to-do')
+assert((await page.getAttribute('[aria-label="Checkbox"]', 'aria-pressed')) === 'true', 'checkbox button shows it is on')
+
 // Create a new place from the picker.
 await page.keyboard.press('Enter')
 await page.keyboard.type('Ask about drip line @')

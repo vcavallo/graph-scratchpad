@@ -100,7 +100,23 @@ export function getCaret(el: HTMLElement): { start: number; end: number } | null
 
 export type CaretTarget = number | 'start' | 'end'
 
-export type Shortcut = 'toggle-done' | 'move-up' | 'move-down' | 'collapse' | 'expand'
+export type Shortcut = 'toggle-done' | 'toggle-task' | 'move-up' | 'move-down' | 'collapse' | 'expand'
+
+/** A line's to-do state, as written in Markdown: "[ ] …" / "[x] …" is a to-do, "- …" a plain bullet. */
+export interface LineMarker {
+  task: boolean
+  done: boolean
+}
+
+const TYPED_MARKER = /^(?:\[([ xX]?)\]|[-*]) /
+
+/** A marker typed at the very start of a line ("[] ", "[x] ", "- "): its length and meaning. */
+export function typedMarker(text: string): (LineMarker & { length: number }) | null {
+  const m = TYPED_MARKER.exec(text)
+  if (!m) return null
+  const box = m[1]
+  return { length: m[0].length, task: box !== undefined, done: !!box && box.toLowerCase() === 'x' }
+}
 
 export function setCaret(el: HTMLElement, target: CaretTarget): void {
   const sel = document.getSelection()
@@ -177,11 +193,26 @@ export function caretOnEdgeLine(el: HTMLElement, edge: 'first' | 'last'): boolea
   return edge === 'first' ? rect.top - box.top < line * 0.75 : box.bottom - rect.bottom < line * 0.75
 }
 
-/** Clean up pasted text into lines, dropping list markers like "- ", "* ", "[ ] ". */
-export function pasteLines(text: string): string[] {
+export interface PastedLine {
+  text: string
+  /** Set when the line had a checkbox ("[ ]" or "[x]"); otherwise it follows the line it's pasted after. */
+  task?: boolean
+  done?: boolean
+}
+
+/** Clean up pasted text into lines, dropping list markers like "- ", "* ", "[ ] " (but keeping checkboxes). */
+export function pasteLines(text: string): PastedLine[] {
   return text
     .replace(/\r\n?/g, '\n')
     .split('\n')
-    .map((l) => l.replace(/^\s*(?:[-*•+]\s+)?(?:\[[ xX]?\]\s+)?/, '').trimEnd())
-    .filter((l) => l.length > 0)
+    .map((l) => {
+      const m = /^\s*(?:[-*•+]\s+)?(?:\[([ xX]?)\]\s+)?/.exec(l)!
+      const line: PastedLine = { text: l.slice(m[0].length).trimEnd() }
+      if (m[1] !== undefined) {
+        line.task = true
+        line.done = m[1].toLowerCase() === 'x'
+      }
+      return line
+    })
+    .filter((l) => l.text.length > 0)
 }

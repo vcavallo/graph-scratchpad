@@ -31,7 +31,7 @@ await shot(page, 'graph-refocused')
 const target = await page.$('.gnode:not(.center)')
 const pos = async (el) => el.evaluate((g) => g.getAttribute('transform'))
 const before = await pos(target)
-const box = await target.$eval('circle.disc', (c) => {
+const box = await target.$eval('.disc', (c) => {
   const r = c.getBoundingClientRect()
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
 })

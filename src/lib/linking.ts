@@ -16,7 +16,7 @@ export function openLinkPicker(editorKey: string, offset: number, typedAt: boole
     onPick: (r) => {
       const ed = getEditor(editorKey)
       if (!ed) return
-      mergeRefs({ [r.id]: { id: r.id, kind: r.kind, label: r.label, done: false, deleted: false, exists: true } })
+      mergeRefs({ [r.id]: { id: r.id, kind: r.kind, label: r.label, done: false, task: false, deleted: false, exists: true } })
       const t = ed.text()
       const start = typedAt && t[offset - 1] === '@' ? offset - 1 : Math.min(offset, t.length)
       const end = typedAt && t[offset - 1] === '@' ? offset : start

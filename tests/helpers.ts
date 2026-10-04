@@ -1,15 +1,19 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
-import { wrapOo1 } from '../src/db/sql'
+import { wrapOo1, type SqlDb } from '../src/db/sql'
 import { Store } from '../src/db/store'
 
 let sqlite3: Awaited<ReturnType<typeof sqlite3InitModule>> | undefined
 
-/** A Store over a fresh in-memory database, with a deterministic clock. */
-export async function makeStore(): Promise<Store> {
+/** A fresh, empty in-memory database (no schema yet). */
+export async function makeDb(): Promise<SqlDb> {
   sqlite3 ??= await sqlite3InitModule()
-  const db = new sqlite3.oo1.DB(':memory:', 'c')
+  return wrapOo1(new sqlite3.oo1.DB(':memory:', 'c'))
+}
+
+/** A Store over a database (fresh by default), with a deterministic clock. */
+export async function makeStore(db?: SqlDb): Promise<Store> {
   let t = 1_700_000_000_000
-  return new Store(wrapOo1(db), { now: () => ++t })
+  return new Store(db ?? (await makeDb()), { now: () => ++t })
 }
 
 /** Compact outline of a subtree: ["a", ["b", "c"]] style, using text. */

@@ -19,6 +19,8 @@ export interface RawNode {
   sort_key: string | null
   /** 1 when this node's children form a numbered list. */
   numbered: number
+  /** 1 when this item is a to-do (has a checkbox); 0 for a plain bullet. */
+  task: number
 }
 
 /** A row of `edges` as stored. */
@@ -41,6 +43,7 @@ export interface NodeInfo {
   updated_at: number
   deleted: boolean
   numbered: boolean
+  task: boolean
 }
 
 export interface TreeNode {
@@ -51,6 +54,10 @@ export interface TreeNode {
   collapsed: boolean
   /** Children are a numbered list. */
   numbered: boolean
+  /** A to-do (checkbox) rather than a plain bullet. Only items can be to-dos. */
+  task: boolean
+  /** Live links pointing at this node, not counting finished to-dos. */
+  links: number
   children: TreeNode[]
 }
 
@@ -61,6 +68,7 @@ export interface RefInfo {
   /** The node's text with nested link tokens replaced by their labels. */
   label: string
   done: boolean
+  task: boolean
   deleted: boolean
   /** False when the token points at an id that doesn't exist at all. */
   exists: boolean
@@ -93,6 +101,8 @@ export interface PadSummary {
   label: string
   text: string
   itemCount: number
+  /** To-dos in the pad, and how many of them are still open. */
+  taskCount: number
   openCount: number
   updated_at: number
 }
@@ -102,7 +112,9 @@ export interface IndexEntry {
   kind: Kind
   label: string
   text: string
+  /** Open to-dos linking here. */
   openBacklinks: number
+  /** Everything linking here: to-dos (done or not) and plain bullets. */
   totalBacklinks: number
   updated_at: number
 }
@@ -138,6 +150,7 @@ export interface GraphNode {
   kind: Kind
   label: string
   done: boolean
+  task: boolean
   hop: number
 }
 

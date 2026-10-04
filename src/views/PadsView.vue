@@ -10,6 +10,12 @@ import { prefs } from '@/state/prefs'
 const router = useRouter()
 const { data: pads, loading } = useLoader(() => api.listPads())
 
+function meta(p: PadSummary): string {
+  if (p.taskCount === 0) return p.itemCount === 0 ? 'Empty' : `${p.itemCount} ${p.itemCount === 1 ? 'item' : 'items'}`
+  if (p.openCount === 0) return 'All done'
+  return p.openCount === p.taskCount ? `${p.openCount} open` : `${p.openCount} open of ${p.taskCount}`
+}
+
 function newPad() {
   const id = crypto.randomUUID()
   api.createPad('', id).catch(reportError)
@@ -74,7 +80,7 @@ function menu(p: PadSummary, i: number) {
       <li v-for="(p, i) in pads" :key="p.id" class="list-item">
         <RouterLink :to="`/n/${p.id}`" class="list-main">
           <span class="list-label">{{ p.label || 'Untitled' }}</span>
-          <span class="list-meta">{{ p.openCount }} open<template v-if="p.itemCount > p.openCount"> of {{ p.itemCount }}</template></span>
+          <span class="list-meta">{{ meta(p) }}</span>
         </RouterLink>
         <button type="button" class="icon-btn" :aria-label="`Options for ${p.label || 'Untitled'}`" @click="menu(p, i)">
           <Icon name="more" />

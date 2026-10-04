@@ -7,7 +7,7 @@ import * as T from '../src/lib/treeOps'
 import type { TreeNode } from '../src/db/types'
 
 function strip(t: TreeNode): unknown {
-  return { id: t.id, done: t.done, collapsed: t.collapsed, children: t.children.map(strip) }
+  return { id: t.id, done: t.done, task: t.task, collapsed: t.collapsed, children: t.children.map(strip) }
 }
 
 // Small deterministic PRNG so failures are reproducible.
@@ -24,19 +24,26 @@ describe('optimistic tree ops mirror the store', () => {
       const s = await makeStore()
       const rand = rng(seed)
       const pad = s.createPad('P')
-      for (let i = 0; i < 6; i++) s.createChild(pad, undefined, { text: `n${i}` })
+      for (let i = 0; i < 6; i++) s.createChild(pad, undefined, { text: `n${i}`, task: i % 2 === 0 })
       let local = s.getTree(pad)
       const pick = () => {
         const rows = T.flatten(local)
         return rows.length ? rows[Math.floor(rand() * rows.length)].node.id : null
       }
+      // New nodes: the local copy picks to-do vs bullet with T.taskFor, the
+      // store with its own default (no task passed), and they must agree.
+      const fresh = (parent: TreeNode, near: TreeNode | undefined) => T.newNode(crypto.randomUUID(), { task: T.taskFor(parent, near) })
+      const near = (id: string) => {
+        const at = T.locate(local, id)!
+        return { parent: at.parent!, node: at.node }
+      }
       for (let step = 0; step < 150; step++) {
         const id = pick()
-        const op = Math.floor(rand() * 9)
-        const nid = crypto.randomUUID()
+        const op = Math.floor(rand() * 11)
         if (!id) {
-          T.insertChild(local, pad, 'last', T.newNode(nid))
-          s.createChild(pad, undefined, { id: nid })
+          const n = fresh(local, local.children[local.children.length - 1])
+          T.insertChild(local, pad, 'last', n)
+          s.createChild(pad, undefined, { id: n.id })
           continue
         }
         switch (op) {
@@ -52,24 +59,30 @@ describe('optimistic tree ops mirror the store', () => {
           case 3:
             if (T.moveDown(local, id)) s.moveDown(id)
             break
-          case 4:
-            T.insertSibling(local, id, 'after', T.newNode(nid))
-            s.createSibling(id, 'after', { id: nid })
+          case 4: {
+            const { parent, node } = near(id)
+            const n = fresh(parent, node)
+            T.insertSibling(local, id, 'after', n)
+            s.createSibling(id, 'after', { id: n.id })
             break
-          case 5:
-            T.insertSibling(local, id, 'before', T.newNode(nid))
-            s.createSibling(id, 'before', { id: nid })
+          }
+          case 5: {
+            const { parent, node } = near(id)
+            const n = fresh(parent, node)
+            T.insertSibling(local, id, 'before', n)
+            s.createSibling(id, 'before', { id: n.id })
             break
-          case 6:
-            T.insertChild(local, id, rand() < 0.5 ? 'first' : 'last', T.newNode(nid))
+          }
+          case 6: {
             // insertChild expands the parent; so does the UI (Enter on an expanded row).
-            {
-              const kids = T.locate(local, id)!.node.children
-              const first = kids[0].id === nid
-              s.createChild(id, first ? null : undefined, { id: nid })
-              s.setCollapsed(id, false)
-            }
+            const { node } = near(id)
+            const first = rand() < 0.5
+            const n = fresh(node, first ? node.children[0] : node.children[node.children.length - 1])
+            T.insertChild(local, id, first ? 'first' : 'last', n)
+            s.createChild(id, first ? null : undefined, { id: n.id })
+            s.setCollapsed(id, false)
             break
+          }
           case 7:
             T.remove(local, id)
             s.deleteSubtree(id)
@@ -78,6 +91,21 @@ describe('optimistic tree ops mirror the store', () => {
             const at = T.locate(local, id)!
             at.node.collapsed = !at.node.collapsed
             s.setCollapsed(id, at.node.collapsed)
+            break
+          }
+          case 9: {
+            // Switch to-do / bullet, as the Outline does.
+            const n = T.locate(local, id)!.node
+            n.task = !n.task
+            if (!n.task) n.done = false
+            s.setTask(id, n.task)
+            break
+          }
+          case 10: {
+            const n = T.locate(local, id)!.node
+            n.done = !n.done
+            if (n.done) n.task = true
+            s.setDone(id, n.done)
             break
           }
         }

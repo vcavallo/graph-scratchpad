@@ -1,6 +1,13 @@
 # Graph Scratchpad
 
-A phone-first outliner that stores everything as a graph. Write nested lists; link any line to any other node with `@`; open a place like "Hardware store" to see every open item that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device.
+A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device.
+
+<p align="center">
+  <img src="docs/screenshots/outline.png" width="300" alt="A pad called Saturday: a numbered list of to-dos with chips linking to places, a person, a grocery list and a waiting state; a grocery checklist showing 1/3 done and 1 link; plain bullet notes">
+  <img src="docs/screenshots/graph.png" width="300" alt="The graph around Saturday, three steps out: the numbered list as an ordered column, to-dos as boxes, notes as circles, the done items dimmed, and dashed links to two places, a person and the waiting state">
+</p>
+
+A pad with a numbered list, to-dos and plain notes, and links to places, a person and a "waiting" state (left), and the same pad's graph three steps out (right). `npm run screenshots` rebuilds both from example data.
 
 See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for milestones.
 
@@ -8,16 +15,18 @@ See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for miles
 
 - **Tap a line** to edit. **Enter** starts a new line (it splits the line if the caret is mid-text). On an empty nested last line, Enter outdents it.
 - **Backspace** on an empty line deletes it. At the start of a line, it merges the line into the one above, unless other items link to it or it has children.
-- The **bar above the keyboard** has outdent, indent, move up, move down, insert link, more (open, move to another pad, turn into a place or person, collapse, delete), and hide keyboard.
-- **Turn into a place / person** creates a standalone place (or person) named after the line, and leaves the line in your list as a link to it. On a hardware keyboard: Tab / Shift-Tab, Alt-Shift-↑/↓ to move, Ctrl-Enter to check off, Ctrl-↑/↓ to collapse or expand.
+- The **bar above the keyboard** has outdent, indent, move up, move down, insert link, checkbox, more (open, move to another pad, turn into a place or person, collapse, delete), and hide keyboard.
+- **To-dos and notes.** A line is either a to-do (with a checkbox) or a plain bullet note. The checkbox button in the bar switches it; so does typing `[] ` or `- ` at the start of a line. New lines follow the line you came from, so checklists stay checklists. The first line of a pad is a to-do, and notes under a place or person are plain bullets. ⋯ → **Add/Remove checkboxes** switches every line inside at once. Only to-dos count as "open", and a parent shows how many of its to-dos are done (2/5).
+- **Turn into a place / person** creates a standalone place (or person) named after the line, and leaves the line in your list as a link to it. On a hardware keyboard: Tab / Shift-Tab, Alt-Shift-↑/↓ to move, Ctrl-Enter to check off, Ctrl-Shift-Enter to switch to-do/note, Ctrl-↑/↓ to collapse or expand.
 - **Move to…** (in the ⋯ menu) opens a browser next to the line: tap a pad or item to look inside it, then **Move into “…”**. Search works too.
 - **Number the items inside** (⋯ on a line, or the page menu for a whole pad) turns its children into a numbered list. In the graph, numbered lists hang off their parent as an ordered column.
 - **Type `@`** at the start of a word, or tap the @ button, to search all items, places, and people. You can also create a new place, person, or item from the same search. New items go into an "Inbox" pad.
-- **Tap a chip** to open what it links to. **Tap a bullet** to open that item, with its children, outgoing links, and backlinks.
-- **Places / People** tabs list every place and person with their open-item counts. Check items off right from a place's backlinks.
-- **Graph** (the node icon at the top right of any item) shows its neighborhood 1–3 steps out. Solid lines are nesting and dashed arrows are links. Drag nodes around; tap one to make it the focus (back steps to the previous one); **Open** on the card goes to its page.
+- **Tap a chip** to open what it links to. **Tap a bullet** to open that item, with its children, outgoing links, and what links here.
+- **Linked here.** A line that other lines link to shows a count at its right; tap it to see them: open to-dos first, then plain mentions, then the done ones (folded away). Finished to-dos don't count. This makes any line a status or tag: put "waiting" in a States pad, link to-dos to it with @, and its page lists what you're waiting on.
+- **Places / People** tabs list every place and person with their open to-do counts. Check items off right from a place's page.
+- **Graph** (the node icon at the top right of any item) shows its neighborhood 1–3 steps out. Solid lines are nesting and dashed arrows are links; to-dos are boxes (ticked and dimmed when done) and notes are circles. Drag nodes around; tap one to make it the focus (back steps to the previous one); **Open** on the card goes to its page.
 - **Settings** shows whether storage is persistent and lets you export or import a JSON backup. **Trash** lets you restore deleted items.
-- Pasting several lines creates one item per line, with `-`, `*`, and `[ ]` markers stripped.
+- Pasting several lines creates one item per line, with `-` and `*` markers stripped. Lines with `[ ]` or `[x]` become to-dos (checked off for `[x]`); the rest follow the line you pasted into.
 
 ## Development
 
@@ -28,6 +37,7 @@ npm test           # data-layer unit tests (Vitest, Node, same sqlite-wasm build
 npm run typecheck
 npm run e2e        # builds, then drives headless Chromium (Pixel 7 emulation, touch)
 npm run icons      # regenerate PWA icons (dependency-free PNG drawing)
+npm run screenshots  # rebuild the README screenshots from example data
 ```
 
 The e2e suites (`e2e/*.mjs`) use `playwright-core` with the system Chromium (`/run/current-system/sw/bin/chromium`, or set `CHROMIUM=`). Screenshots land in `e2e/shots/`.

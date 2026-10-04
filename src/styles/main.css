@@ -658,6 +658,54 @@ a {
   text-decoration-color: var(--pencil);
 }
 
+/* A plain bullet has no checkbox; give its text a little room from the dot. */
+.row:not(.task) .row-text {
+  padding-left: 6px;
+}
+
+/* "2/5": to-dos checked off directly inside this row. */
+.row-progress {
+  flex: none;
+  margin: 10px 2px 0 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--grid);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-progress.complete {
+  color: var(--pencil);
+}
+
+/* How many things link to this row; tap to see them. */
+.row-links {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  margin: 8px 4px 0 2px;
+  padding: 0 8px 0 6px;
+  border-radius: 12px;
+  background: var(--hl-item);
+  color: var(--hl-item-ink);
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A bigger hit area than the pill itself. */
+.row-links::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
+}
+
 .add-row {
   display: flex;
   align-items: center;
@@ -702,6 +750,11 @@ a {
 
 .edit-toolbar button:active:not(:disabled) {
   background: var(--wash-strong);
+}
+
+.edit-toolbar button[aria-pressed='true'] {
+  background: var(--hl-item);
+  color: var(--hl-item-ink);
 }
 
 .edit-toolbar button:disabled {
@@ -889,6 +942,45 @@ a {
 .backlink .check {
   height: 48px;
   margin-left: -6px;
+}
+
+.backlinks {
+  scroll-margin-top: calc(var(--topbar-h) + 12px);
+}
+
+/* Plain mentions sit under the open to-dos, marked with a dot (or the kind's icon). */
+.backlink-list + .backlink-list.mentions {
+  margin-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.backlink-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 48px;
+  margin-left: -6px;
+  color: var(--ink-soft);
+}
+
+.backlink-mark .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.backlink-mark.kind-place {
+  color: var(--hl-place-ink);
+}
+
+.backlink-mark.kind-person {
+  color: var(--hl-person-ink);
+}
+
+.backlink-mark.kind-pad {
+  color: var(--hl-pad-ink);
 }
 
 .backlink-body {
@@ -1344,10 +1436,6 @@ body:has(.edit-toolbar) .toasts {
   touch-action: none;
 }
 
-.gnode .disc {
-  transition: r 200ms ease;
-}
-
 .gnode .hit {
   fill: transparent;
 }
@@ -1381,6 +1469,14 @@ body:has(.edit-toolbar) .toasts {
   opacity: 0.55;
 }
 
+.gnode .tick {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .gnode text.num {
   font-size: 11px;
   font-weight: 750;
@@ -1405,9 +1501,11 @@ body:has(.edit-toolbar) .toasts {
 
 .graph-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  height: 44px;
+  gap: 2px 16px;
+  min-height: 44px;
+  padding: 6px 0;
   font-size: 13px;
   color: var(--ink-soft);
 }
@@ -1416,6 +1514,12 @@ body:has(.edit-toolbar) .toasts {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.legend-node svg {
+  fill: var(--paper-raised);
+  stroke: var(--ink);
+  stroke-width: 1.5;
 }
 
 .graph-legend .truncated {

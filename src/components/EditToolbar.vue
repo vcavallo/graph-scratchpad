@@ -10,8 +10,10 @@ withDefaults(
     canUp?: boolean
     canDown?: boolean
     structure?: boolean
+    /** Whether the line is a to-do; null hides the checkbox button (not an item). */
+    task?: boolean | null
   }>(),
-  { canIndent: true, canOutdent: true, canUp: true, canDown: true, structure: true },
+  { canIndent: true, canOutdent: true, canUp: true, canDown: true, structure: true, task: null },
 )
 const emit = defineEmits<{
   outdent: []
@@ -19,6 +21,7 @@ const emit = defineEmits<{
   up: []
   down: []
   link: []
+  task: []
   more: []
   close: []
 }>()
@@ -41,6 +44,16 @@ const emit = defineEmits<{
       </button>
     </template>
     <button type="button" aria-label="Insert link" @click="emit('link')"><Icon name="at" /></button>
+    <button
+      v-if="task !== null"
+      type="button"
+      class="toggle"
+      aria-label="Checkbox"
+      :aria-pressed="task"
+      @click="emit('task')"
+    >
+      <Icon name="checkbox" />
+    </button>
     <button v-if="structure" type="button" aria-label="More actions" @click="emit('more')">
       <Icon name="more" />
     </button>
