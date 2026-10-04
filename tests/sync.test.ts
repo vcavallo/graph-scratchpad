@@ -5,7 +5,8 @@ import { SyncServer } from '../server/sync-server.mjs'
 import { syncOnce, type Transport } from '../src/db/sync'
 import type { Store } from '../src/db/store'
 import { makeToken } from '../src/lib/tokens'
-import { makeStore, shape } from './helpers'
+import { makeDb, makeStore, shape } from './helpers'
+import { MIGRATIONS } from '../src/db/migrations'
 
 const BASE = 1_700_000_000_000
 
@@ -221,6 +222,29 @@ describe('sync', () => {
     expect(b.s.getAncestors(line.id).map((c) => c.label)).toEqual(['Welcome', 'Fix the sprinkler'])
     expect(b.s.getNode(store)?.kind).toBe('place')
     expect(b.s.getBacklinks(store).map((x) => x.source.id)).toEqual([line.id])
+  })
+
+  it('uploads everything a device had before sync existed', async () => {
+    // A phone's database from before migration 5, with lists in it.
+    const db = await makeDb()
+    for (const m of MIGRATIONS.filter((m) => m.version <= 4)) db.exec(m.sql)
+    db.exec("INSERT INTO meta (key, value) VALUES ('schema_version', '4')")
+    const ins = 'INSERT INTO nodes (id, kind, text, done, task, sort_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 1)'
+    const [pad, x, place] = ['a1111111-1111-4111-8111-111111111111', 'b2222222-2222-4222-8222-222222222222', 'c3333333-3333-4333-8333-333333333333']
+    db.exec(ins, [pad, 'pad', 'Old pad', 0, 0, 'a0'])
+    db.exec(ins, [x, 'item', `buy at [[${place}]]`, 1, 1, null])
+    db.exec(ins, [place, 'place', 'Shop', 0, 0, null])
+    db.exec("INSERT INTO edges (id, src, dst, type, sort_key, created_at) VALUES ('e1', ?, ?, 'child', 'a0', 1)", [pad, x])
+    db.exec("INSERT INTO edges (id, src, dst, type, sort_key, created_at) VALUES ('e2', ?, ?, 'link', NULL, 1)", [x, place])
+    const phone = await makeStore({ db })
+    const server = makeServer()
+    await syncOnce(phone, link(server))
+    const b = await device(server)
+    await b.sync()
+    expect(shape(b.s, pad)).toEqual([`buy at [[${place}]]`])
+    expect(b.s.getNode(x)).toMatchObject({ done: true, task: true })
+    expect(b.s.getBacklinks(place).map((l) => l.source.id)).toEqual([x])
+    expect(dump(b.s)).toEqual(dump(phone))
   })
 
   it('fills a new or reset server from the devices', async () => {
