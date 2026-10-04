@@ -19,6 +19,8 @@ interface SimNode extends SimulationNodeDatum, GraphNode {
   x: number
   y: number
   r: number
+  /** Shown label ('' when the graph is busy and this node is minor). */
+  text: string
 }
 interface SimEdge {
   source: SimNode
@@ -38,7 +40,9 @@ const center = computed(() => nodes.value.find((n) => n.id === props.id))
 
 const RADIUS: Record<Kind, number> = { pad: 13, item: 8, place: 12, person: 12 }
 
-function truncate(s: string, n = 22) {
+const CHAR_W = 6.8
+
+function truncate(s: string, n = 18) {
   const t = s || 'Untitled'
   return t.length > n ? t.slice(0, n - 1) + '…' : t
 }
@@ -55,12 +59,17 @@ async function load() {
 function layout() {
   const d = data.value
   if (!d) return
-  const simNodes: SimNode[] = d.nodes.map((n) => ({
-    ...n,
-    r: n.id === d.center ? RADIUS[n.kind] + 5 : RADIUS[n.kind],
-    x: (Math.random() - 0.5) * 200,
-    y: (Math.random() - 0.5) * 200,
-  }))
+  const busy = d.nodes.length > 18
+  const simNodes: SimNode[] = d.nodes.map((n) => {
+    const major = n.id === d.center || n.kind !== 'item' || n.hop <= 1
+    return {
+      ...n,
+      r: n.id === d.center ? RADIUS[n.kind] + 5 : RADIUS[n.kind],
+      text: !busy || major ? truncate(n.label, n.id === d.center ? 26 : 18) : '',
+      x: (Math.random() - 0.5) * 200,
+      y: (Math.random() - 0.5) * 300,
+    }
+  })
   const byId = new Map(simNodes.map((n) => [n.id, n]))
   const centerNode = byId.get(d.center)
   if (centerNode) {
@@ -74,15 +83,17 @@ function layout() {
     .force(
       'link',
       forceLink<SimNode, SimEdge>(simEdges)
-        .distance((e) => (e.type === 'child' ? 55 : 95))
-        .strength((e) => (e.type === 'child' ? 0.9 : 0.5)),
+        .distance((e) => (e.type === 'child' ? 60 : 120))
+        .strength((e) => (e.type === 'child' ? 0.8 : 0.4)),
     )
-    .force('charge', forceManyBody<SimNode>().strength(-260))
-    .force('collide', forceCollide<SimNode>((n) => n.r + 18))
-    .force('x', forceX<SimNode>(0).strength(0.04))
-    .force('y', forceY<SimNode>(0).strength(0.04))
+    .force('charge', forceManyBody<SimNode>().strength(-340).distanceMax(500))
+    // Labels sit under the discs, so give labelled nodes more elbow room.
+    .force('collide', forceCollide<SimNode>((n) => n.r + 10 + (n.text.length * CHAR_W) / 3).iterations(2))
+    // Phones are portrait: pull harder sideways than vertically.
+    .force('x', forceX<SimNode>(0).strength(0.09))
+    .force('y', forceY<SimNode>(0).strength(0.025))
     .stop()
-  sim.tick(320)
+  sim.tick(400)
   nodes.value = simNodes
   edges.value = simEdges
   fit()
@@ -98,12 +109,13 @@ function fit() {
   let maxX = -Infinity
   let maxY = -Infinity
   for (const n of nodes.value) {
-    minX = Math.min(minX, n.x - n.r - 40)
-    maxX = Math.max(maxX, n.x + n.r + 40)
-    minY = Math.min(minY, n.y - n.r - 10)
-    maxY = Math.max(maxY, n.y + n.r + 30)
+    const half = Math.max(n.r, (n.text.length * CHAR_W) / 2) + 8
+    minX = Math.min(minX, n.x - half)
+    maxX = Math.max(maxX, n.x + half)
+    minY = Math.min(minY, n.y - n.r - 12)
+    maxY = Math.max(maxY, n.y + n.r + 28)
   }
-  const k = Math.min(2, w / (maxX - minX), h / (maxY - minY))
+  const k = Math.min(1.6, w / (maxX - minX), h / (maxY - minY))
   const t = zoomIdentity
     .translate(w / 2, h / 2)
     .scale(k)
@@ -201,7 +213,7 @@ onBeforeUnmount(() => {
           >
             <circle :r="n.r + 10" class="hit" />
             <circle :r="n.r" class="disc" />
-            <text :y="n.r + 15" text-anchor="middle">{{ truncate(n.label) }}</text>
+            <text v-if="n.text" :y="n.r + 15" text-anchor="middle">{{ n.text }}</text>
           </g>
         </g>
       </g>

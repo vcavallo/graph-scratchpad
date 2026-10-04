@@ -13,6 +13,7 @@ import {
   serialize,
   setCaret,
   updateChips,
+  ZWSP,
   type CaretTarget,
   type Shortcut,
 } from '@/lib/editorDom'
@@ -149,6 +150,13 @@ function checkAt() {
 function onInput(e: Event) {
   const ie = e as InputEvent
   sanitize()
+  // Emptied by select-all + delete: put the zero-width placeholder back so
+  // Android keyboards still send a Backspace we can see.
+  const e2 = el.value
+  if (e2 && !composing && current() === '' && e2.textContent !== ZWSP) {
+    render('')
+    if (focused) setCaret(e2, 0)
+  }
   updateEmpty()
   schedule()
   if (!ie.isComposing && (ie.inputType ?? 'insertText').startsWith('insert')) checkAt()

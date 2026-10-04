@@ -258,7 +258,14 @@ onMounted(async () => {
       />
 
       <h2 v-if="isHub && data.tree.children.length" class="section-title">Notes</h2>
-      <Outline v-if="!node.deleted" ref="outline" :root="data.tree" :reload="reload" @exit-top="focusTitle" />
+      <Outline
+        v-if="!node.deleted"
+        ref="outline"
+        :root="data.tree"
+        :reload="reload"
+        :add-label="isHub ? 'note' : 'item'"
+        @exit-top="focusTitle"
+      />
 
       <section v-if="data.outgoing.length" class="links-out">
         <h2 class="section-title">Links</h2>

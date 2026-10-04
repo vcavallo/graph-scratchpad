@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import BottomNav from './components/BottomNav.vue'
 import NodePicker from './components/NodePicker.vue'
@@ -8,7 +9,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 import Toasts from './components/Toasts.vue'
 import { dbState } from './db/api'
 import { editing } from './state/focus'
-import { pickerState, toast } from './state/ui'
+import { closePicker, closeSheet, confirmState, pickerState, toast } from './state/ui'
 
 const { needRefresh, updateServiceWorker } = useRegisterSW({
   immediate: true,
@@ -21,6 +22,17 @@ const { needRefresh, updateServiceWorker } = useRegisterSW({
 })
 
 const chromeHidden = computed(() => !!editing.key || !!pickerState.value)
+
+// Android's back button navigates; don't leave an overlay over the next page.
+const route = useRoute()
+watch(
+  () => route.path,
+  () => {
+    closePicker()
+    closeSheet()
+    confirmState.value?.resolve(false)
+  },
+)
 </script>
 
 <template>

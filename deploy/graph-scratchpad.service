@@ -1,0 +1,15 @@
+# systemd user unit: serves the deployed build on 127.0.0.1:8742.
+# Install: cp deploy/graph-scratchpad.service ~/.config/systemd/user/ &&
+#          systemctl --user daemon-reload && systemctl --user enable --now graph-scratchpad
+# Tailnet HTTPS: tailscale serve --bg --https=10002 http://127.0.0.1:8742
+[Unit]
+Description=Graph Scratchpad static server
+After=network.target
+
+[Service]
+ExecStart=/etc/profiles/per-user/vcavallo/bin/node %h/.local/share/graph-scratchpad/serve.mjs %h/.local/share/graph-scratchpad/current 8742
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

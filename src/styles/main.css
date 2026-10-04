@@ -1241,9 +1241,8 @@ body:has(.edit-toolbar) .toasts {
   stroke-width: 4;
 }
 
-.gnode.done text {
-  text-decoration: line-through;
-  fill: var(--pencil);
+.gnode.done {
+  opacity: 0.55;
 }
 
 .gnode text {

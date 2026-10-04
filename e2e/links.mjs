@@ -1,0 +1,165 @@
+// Links, backlinks, places, graph, export/import.
+import { launch, watchConsole, shot, outline, activeRowText, assert, BASE, sleep } from './lib.mjs'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const tmp = process.env.TMPDIR ?? tmpdir()
+let { ctx, close } = await launch({ userDataDir: mkdtempSync(join(tmp, 'gs-e2e-')) })
+const page = ctx.pages()[0] ?? (await ctx.newPage())
+const errors = watchConsole(page)
+
+await page.goto(BASE + '/')
+await page.waitForSelector('.outline .row')
+const padUrl = page.url()
+
+// Type @ in a new item: the picker opens with its own focused search field.
+await page.tap('.add-row')
+await sleep(150)
+await page.keyboard.type('Get hose clamps at @')
+await page.waitForSelector('.picker')
+assert(await page.evaluate(() => document.activeElement?.classList.contains('picker-input')), 'typing @ opens picker with focus in search')
+await page.keyboard.type('hard')
+await sleep(250)
+const first = await page.textContent('.picker-item .picker-label')
+assert(first === 'Hardware store', 'fuzzy search finds Hardware store')
+await page.tap('.picker-item')
+await sleep(250)
+assert(!(await page.isVisible('.picker')), 'picker closes')
+assert((await activeRowText(page))?.startsWith('Get hose clamps at Hardware store'), 'chip inserted and editor refocused: ' + (await activeRowText(page)))
+await page.keyboard.type('today')
+await sleep(100)
+assert((await outline(page)).at(-1) === 'Get hose clamps at [Hardware store] today', 'typing continues after chip: ' + (await outline(page)).at(-1))
+
+// Create a new place from the picker.
+await page.keyboard.press('Enter')
+await page.keyboard.type('Ask about drip line @')
+await page.waitForSelector('.picker')
+await page.keyboard.type('Home Depot')
+await sleep(250)
+await page.tap('text=New place “Home Depot”')
+await sleep(300)
+assert((await outline(page)).at(-1) === 'Ask about drip line [Home Depot] ', 'new place created inline: ' + (await outline(page)).at(-1))
+
+// Toolbar link button: link a new person without typing @.
+await page.keyboard.type('with')
+await page.tap('[aria-label="Insert link"]')
+await page.waitForSelector('.picker')
+await page.keyboard.type('Sam')
+await sleep(250)
+await page.tap('text=New person “Sam”')
+await sleep(300)
+assert((await outline(page)).at(-1) === 'Ask about drip line [Home Depot] with [Sam] ', 'toolbar @ links a new person: ' + (await outline(page)).at(-1))
+await shot(page, 'links-outline')
+
+// Escape out of the picker leaves the literal @.
+await page.keyboard.press('Enter')
+await page.keyboard.type('email me@home and @')
+await page.waitForSelector('.picker')
+await page.keyboard.press('Escape')
+await sleep(200)
+assert((await activeRowText(page)) === 'email me@home and @', 'cancel keeps literal text; mid-word @ does not trigger')
+await page.keyboard.press('Backspace')
+await page.tap('[aria-label="Hide keyboard"]')
+await sleep(800)
+
+// Persisted after reload.
+await page.reload()
+await page.waitForSelector('.outline .row')
+await sleep(300)
+assert((await outline(page)).includes('Get hose clamps at [Hardware store] today'), 'chip label survives reload')
+
+// Tap a chip → place view with backlinks across lists.
+await page.tap('.row:has-text("Get hose clamps") .chip')
+await page.waitForSelector('.backlinks')
+await sleep(300)
+const count = await page.textContent('.backlinks .count')
+assert(count?.startsWith('3 open'), 'Hardware store shows 3 open backlinks: ' + count)
+const crumbs = await page.$$eval('.backlink .crumbline', (els) => els.map((e) => e.textContent))
+assert(crumbs.some((c) => c.includes('Welcome › Fix the sprinkler')), 'backlink breadcrumbs show pad › ancestors: ' + JSON.stringify(crumbs))
+await shot(page, 'place-view')
+
+// Check one off from the backlinks list.
+await page.tap('.backlink:has-text("teflon") .check')
+await sleep(400)
+assert((await page.textContent('.backlinks .count'))?.startsWith('2 open, 1 done'), 'checking off updates counts')
+
+// Rename the place; chips everywhere follow.
+await page.tap('.editable.title')
+await page.keyboard.press('Control+A')
+await page.keyboard.type('Ace Hardware')
+await page.tap('[aria-label="Hide keyboard"]')
+await sleep(600)
+await page.goto(padUrl)
+await page.waitForSelector('.outline .row')
+await sleep(300)
+const rows = await outline(page)
+assert(rows.includes('Get hose clamps at [Ace Hardware] today'), 'rename updates chips')
+assert(rows.some((r) => r.includes('teflon') && r.endsWith('✓')), 'done state shows in the original list')
+
+// Places index.
+await page.tap('.nav-tab:has-text("Places")')
+await page.waitForSelector('.list-item')
+const places = await page.$$eval('.list-item', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()))
+assert(JSON.stringify(places) === JSON.stringify(['Ace Hardware 2 open', 'Home Depot 1 open']), 'places index: ' + JSON.stringify(places))
+await page.tap('.nav-tab:has-text("People")')
+await page.waitForSelector('.page-title:has-text("People")')
+await sleep(300)
+await shot(page, 'people')
+assert((await page.innerText('.page')).includes('Sam'), 'people index lists Sam')
+
+// Delete Home Depot: chip renders struck through, not as a raw token.
+await page.tap('.nav-tab:has-text("Places")')
+await page.tap('text=Home Depot')
+await page.waitForSelector('.title-block')
+await page.tap('[aria-label="More"]')
+await page.tap('.sheet-action:has-text("Delete")')
+await sleep(400)
+await page.goto(padUrl)
+await page.waitForSelector('.outline .row')
+await sleep(300)
+assert(await page.isVisible('.chip-deleted'), 'link to a deleted node renders struck through')
+
+// Graph view.
+await page.tap('[aria-label="Show graph"]')
+await page.waitForSelector('.gnode')
+await sleep(300)
+const gcount = await page.$$eval('.gnode', (g) => g.length)
+const lcount = await page.$$eval('.edge-link', (g) => g.length)
+assert(gcount > 5 && lcount >= 2, `graph renders ${gcount} nodes, ${lcount} link edges`)
+await shot(page, 'graph')
+await page.tap('.gnode.kind-place')
+await page.waitForSelector('.backlinks')
+assert(page.url().includes('/n/'), 'tapping a graph node opens it')
+
+// Export, then import into a fresh install.
+await page.goto(BASE + '/#/settings')
+await page.waitForSelector('text=Export')
+const [dl] = await Promise.all([page.waitForEvent('download'), page.tap('button:has-text("Export")')])
+const path = join(mkdtempSync(join(tmp, 'gs-dl-')), dl.suggestedFilename())
+await dl.saveAs(path)
+const exported = JSON.parse(readFileSync(path, 'utf8'))
+assert(exported.app === 'graph-scratchpad' && exported.nodes.length > 10, `export has ${exported.nodes.length} nodes, ${exported.edges.length} edges`)
+await shot(page, 'settings')
+console.log('console errors (1st profile):', errors.length ? errors : 'none')
+await close()
+
+;({ ctx, close } = await launch({ userDataDir: mkdtempSync(join(tmp, 'gs-e2e-')) }))
+const p2 = ctx.pages()[0] ?? (await ctx.newPage())
+const errors2 = watchConsole(p2)
+await p2.goto(BASE + '/#/settings')
+await p2.waitForSelector('text=Import')
+const [chooser] = await Promise.all([p2.waitForEvent('filechooser'), p2.tap('button:has-text("Import")')])
+await chooser.setFiles(path)
+await p2.waitForSelector('.dialog')
+await p2.tap('.dialog button:has-text("Replace")')
+await p2.waitForSelector('.outline .row', { timeout: 10000 })
+await sleep(400)
+const imported = await outline(p2)
+assert(imported.includes('Get hose clamps at [Ace Hardware] today'), 'import restores outline and links in a fresh install')
+await p2.tap('.nav-tab:has-text("Places")')
+await p2.waitForSelector('.page-title:has-text("Places")')
+await sleep(300)
+assert((await p2.textContent('.list-item')).includes('Ace Hardware'), 'imported places index works')
+console.log('console errors (2nd profile):', errors2.length ? errors2 : 'none')
+await close()

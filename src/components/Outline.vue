@@ -19,7 +19,9 @@ import { openPicker, openSheet, pickerState, reportError, toast, type SheetActio
 import { refCache } from '@/state/refs'
 import { labelize } from '@/lib/tokens'
 
-const props = defineProps<{ root: TreeNode; reload: () => Promise<void> }>()
+const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
+  addLabel: 'item',
+})
 const emit = defineEmits<{ exitTop: [] }>()
 const router = useRouter()
 
@@ -377,7 +379,7 @@ defineExpose({ addChild, focusFirst })
     />
     <button type="button" class="add-row" @click="addChild('last')">
       <Icon name="plus" :size="18" />
-      <span>{{ rows.length ? 'Add item' : 'Add the first item' }}</span>
+      <span>{{ rows.length ? `Add ${addLabel}` : `Add the first ${addLabel}` }}</span>
     </button>
     <Teleport to="body">
       <EditToolbar
