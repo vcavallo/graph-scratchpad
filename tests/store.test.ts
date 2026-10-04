@@ -576,3 +576,37 @@ describe('insertMany', () => {
     expect(shape(s, pad)).toEqual(['a'])
   })
 })
+
+describe('convertToHub', () => {
+  it('turns a line into a standalone place and leaves a link in its spot', () => {
+    const { garden, x } = build(pad, ['garden', ['x'], 'after'])
+    s.updateText(garden, 'Garden center')
+    const place = s.convertToHub(garden, 'place')
+    expect(place).not.toBe(garden)
+    expect(s.getNode(place)).toMatchObject({ kind: 'place', text: 'Garden center' })
+    expect(s.getAncestors(place)).toEqual([])
+    expect(s.getNode(garden)?.text).toBe(makeToken(place))
+    expect(s.getChildren(garden).map((c) => c.id)).toEqual([x])
+    expect(s.getBacklinks(place).map((b) => b.source.id)).toEqual([garden])
+    expect(s.listByKind('place').map((p) => p.label)).toEqual(['Garden center'])
+    expect(s.search('garden')[0]).toMatchObject({ id: place, kind: 'place', context: '' })
+  })
+
+  it('relabels a node that has no parent', () => {
+    const loose = s.createNode('item', 'Sam')
+    expect(s.convertToHub(loose, 'person')).toBe(loose)
+    expect(s.getNode(loose)?.kind).toBe('person')
+  })
+
+  it('keeps links that were in the line on the new place', () => {
+    const city = s.createNode('place', 'Springfield')
+    const { a } = build(pad, ['a'])
+    s.updateText(a, `Garden center in ${makeToken(city)}`)
+    const place = s.convertToHub(a, 'place')
+    expect(s.getBacklinks(city).map((b) => b.source.id)).toEqual([place])
+  })
+
+  it('refuses pads', () => {
+    expect(() => s.convertToHub(pad, 'place')).toThrow(/pad/)
+  })
+})

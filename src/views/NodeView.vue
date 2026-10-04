@@ -12,6 +12,7 @@ import type { Kind, TreeNode } from '@/db/types'
 import { useLoader } from '@/composables/useLoader'
 import { mergeRefs, refCache } from '@/state/refs'
 import { labelize } from '@/lib/tokens'
+import { KIND_NAMES } from '@/lib/kinds'
 import { editing, focusEditor } from '@/state/focus'
 import { prefs } from '@/state/prefs'
 import { openLinkPicker } from '@/lib/linking'
@@ -42,7 +43,6 @@ const titleKey = computed(() => `title:${props.id}`)
 const titleFocused = computed(() => editing.key === titleKey.value)
 const parent = computed(() => data.value?.ancestors.at(-1))
 
-const KIND_NAMES: Record<Kind, string> = { pad: 'Pad', item: 'Item', place: 'Place', person: 'Person' }
 const placeholder = computed(() =>
   kind.value === 'pad' ? 'Name this pad' : kind.value === 'place' ? 'Name this place' : kind.value === 'person' ? 'Name' : 'Untitled',
 )
@@ -147,18 +147,37 @@ function moveTo() {
   })
 }
 
+async function convertToHub(k: 'place' | 'person') {
+  try {
+    const hub = await api.convertToHub(props.id, k)
+    if (hub !== props.id) {
+      toast(`“${titleLabel.value}” is now a ${k}; the line links to it`)
+      void router.push(`/n/${hub}`)
+    }
+  } catch (e) {
+    reportError(e)
+  }
+}
+
 function openMenu() {
   if (!node.value) return
   const actions: SheetAction[] = [{ label: 'Show graph', icon: 'graph', run: () => router.push(`/n/${props.id}/graph`) }]
-  if (kind.value !== 'pad') {
-    actions.push({ label: 'Move to…', icon: 'move', run: moveTo })
-    for (const k of ['item', 'place', 'person'] as Kind[]) {
-      if (k === kind.value) continue
-      actions.push({
-        label: k === 'item' ? 'Make it a plain item' : `Make it a ${k}`,
-        icon: k === 'item' ? 'dot' : k === 'place' ? 'pin' : 'person',
-        run: () => void api.setKind(props.id, k).catch(reportError),
-      })
+  if (kind.value === 'item') {
+    actions.push(
+      { label: 'Move to…', icon: 'move', run: moveTo },
+      { label: 'Turn into a place', icon: 'pin', run: () => void convertToHub('place') },
+      { label: 'Turn into a person', icon: 'person', run: () => void convertToHub('person') },
+    )
+  } else if (kind.value === 'place' || kind.value === 'person') {
+    const other = kind.value === 'place' ? 'person' : 'place'
+    actions.push({
+      label: `Make it a ${other}`,
+      icon: other === 'place' ? 'pin' : 'person',
+      run: () => void api.setKind(props.id, other).catch(reportError),
+    })
+    if (parent.value) {
+      // Lives inside a list (made by an older version): let it be a plain item again.
+      actions.push({ label: 'Make it a plain item', icon: 'dot', run: () => void api.setKind(props.id, 'item').catch(reportError) })
     }
   } else {
     actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })

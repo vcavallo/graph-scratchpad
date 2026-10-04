@@ -8,7 +8,8 @@ See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for miles
 
 - **Tap a line** to edit. **Enter** starts a new line (it splits the line if the caret is mid-text). On an empty nested last line, Enter outdents it.
 - **Backspace** on an empty line deletes it. At the start of a line, it merges the line into the one above, unless other items link to it or it has children.
-- The **bar above the keyboard** has outdent, indent, move up, move down, insert link, more (open, move to another pad, make it a place or person, collapse, delete), and hide keyboard. On a hardware keyboard: Tab / Shift-Tab, Alt-Shift-↑/↓ to move, Ctrl-Enter to check off, Ctrl-↑/↓ to collapse or expand.
+- The **bar above the keyboard** has outdent, indent, move up, move down, insert link, more (open, move to another pad, turn into a place or person, collapse, delete), and hide keyboard.
+- **Turn into a place / person** creates a standalone place (or person) named after the line, and leaves the line in your list as a link to it. On a hardware keyboard: Tab / Shift-Tab, Alt-Shift-↑/↓ to move, Ctrl-Enter to check off, Ctrl-↑/↓ to collapse or expand.
 - **Type `@`** at the start of a word, or tap the @ button, to search all items, places, and people. You can also create a new place, person, or item from the same search. New items go into an "Inbox" pad.
 - **Tap a chip** to open what it links to. **Tap a bullet** to open that item, with its children, outgoing links, and backlinks.
 - **Places / People** tabs list every place and person with their open-item counts. Check items off right from a place's backlinks.

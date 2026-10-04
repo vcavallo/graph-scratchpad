@@ -5,6 +5,7 @@ import KindIcon from './KindIcon.vue'
 import { api } from '@/db/api'
 import type { Kind, SearchResult } from '@/db/types'
 import { closePicker, pickerState, reportError, type PickResult } from '@/state/ui'
+import { resultContext } from '@/lib/kinds'
 
 const q = ref('')
 const results = ref<SearchResult[]>([])
@@ -134,7 +135,7 @@ function onKey(e: KeyboardEvent) {
             <KindIcon :kind="r.kind" />
             <span class="picker-text">
               <span class="picker-label">{{ r.label || 'Untitled' }}</span>
-              <span v-if="r.context" class="picker-context">{{ r.context }}</span>
+              <span v-if="resultContext(r)" class="picker-context">{{ resultContext(r) }}</span>
             </span>
           </button>
         </li>

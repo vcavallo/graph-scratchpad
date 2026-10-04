@@ -4,6 +4,7 @@ import KindIcon from '@/components/KindIcon.vue'
 import { api } from '@/db/api'
 import type { SearchResult } from '@/db/types'
 import { reportError } from '@/state/ui'
+import { resultContext } from '@/lib/kinds'
 
 const q = ref('')
 const results = ref<SearchResult[]>([])
@@ -48,7 +49,7 @@ onMounted(() => {
           <KindIcon :kind="r.kind" />
           <span class="list-text">
             <span class="list-label">{{ r.label || 'Untitled' }}</span>
-            <span v-if="r.context" class="list-context">{{ r.context }}</span>
+            <span v-if="resultContext(r)" class="list-context">{{ resultContext(r) }}</span>
           </span>
         </RouterLink>
       </li>

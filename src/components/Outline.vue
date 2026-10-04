@@ -16,8 +16,8 @@ import type { CaretTarget, Shortcut } from '@/lib/editorDom'
 import { openLinkPicker } from '@/lib/linking'
 import { editing, focusEditor, getEditor } from '@/state/focus'
 import { openPicker, openSheet, pickerState, reportError, toast, type SheetAction } from '@/state/ui'
-import { refCache } from '@/state/refs'
-import { labelize } from '@/lib/tokens'
+import { mergeRefs, refCache } from '@/state/refs'
+import { labelize, makeToken } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
   addLabel: 'item',
@@ -301,6 +301,35 @@ function setKind(row: T.FlatRow, kind: Kind) {
   sync(api.setKind(row.node.id, kind))
 }
 
+/**
+ * Places and people stand on their own: create one from this line's text and
+ * leave a link to it where the line was.
+ */
+function convertToHub(row: T.FlatRow, kind: 'place' | 'person') {
+  const n = row.node
+  const ed = getEditor(key(n.id))
+  const original = ed?.text() ?? n.text
+  void ed?.flush()
+  const hubId = crypto.randomUUID()
+  const label = labelize(original, (id) => refCache[id]?.label).replace(/\s+/g, ' ').trim() || 'Untitled'
+  mergeRefs({ [hubId]: { id: hubId, kind, label, done: false, deleted: false, exists: true } })
+  const token = makeToken(hubId)
+  n.text = token
+  ed?.replace(token, { saved: true })
+  api
+    .convertToHub(n.id, kind, hubId)
+    .then(() =>
+      toast(`“${label}” is now a ${kind}, linked from this line`, {
+        action: {
+          label: 'Undo',
+          run: () => sync(api.updateText(n.id, original).then(() => api.deleteSubtree(hubId))),
+        },
+      }),
+    )
+    .catch(reportError)
+    .finally(() => void props.reload())
+}
+
 function openMore(row: T.FlatRow) {
   const n = row.node
   const actions: SheetAction[] = [
@@ -314,14 +343,14 @@ function openMore(row: T.FlatRow) {
       run: () => setCollapsed(row, !n.collapsed),
     })
   }
-  for (const k of ['item', 'place', 'person'] as Kind[]) {
-    if (k !== n.kind) {
-      actions.push({
-        label: k === 'item' ? 'Make it a plain item' : `Make it a ${k}`,
-        icon: k === 'item' ? 'dot' : k === 'place' ? 'pin' : 'person',
-        run: () => setKind(row, k),
-      })
-    }
+  if (n.kind === 'item') {
+    actions.push(
+      { label: 'Turn into a place', icon: 'pin', run: () => convertToHub(row, 'place') },
+      { label: 'Turn into a person', icon: 'person', run: () => convertToHub(row, 'person') },
+    )
+  } else if (n.kind === 'place' || n.kind === 'person') {
+    // A place/person that lives inside a list (made by an older version).
+    actions.push({ label: 'Make it a plain item', icon: 'dot', run: () => setKind(row, 'item') })
   }
   actions.push({ label: 'Delete', icon: 'trash', danger: true, run: () => deleteRow(n.id) })
   openSheet({ title: labelOf(n), actions })

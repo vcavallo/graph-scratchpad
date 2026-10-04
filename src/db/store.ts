@@ -1,7 +1,7 @@
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { SqlDb } from './sql'
 import { LATEST_SCHEMA_VERSION, migrate, schemaVersion } from './migrations'
-import { labelize, parseTokens } from '../lib/tokens'
+import { labelize, makeToken, parseTokens } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
 import {
   KINDS,
@@ -448,6 +448,27 @@ export class Store {
         this.#now(),
         id,
       ])
+    })
+  }
+
+  /**
+   * Turn a line in a list into a place or person. Places and people are
+   * standalone nodes you link to, so this creates a new root node with the
+   * line's text and replaces the line's text with a link to it. The line keeps
+   * its position, children and done state. A node without a parent is simply
+   * relabelled. Returns the id of the place/person.
+   */
+  convertToHub(id: string, kind: 'place' | 'person', newId?: string): string {
+    return this.db.tx(() => {
+      const n = this.#requireLive(id)
+      if (n.kind === 'pad') throw new StoreError('A pad can’t become a place or person', 'pad_kind')
+      if (!this.#parentEdge(id)) {
+        this.setKind(id, kind)
+        return id
+      }
+      const hub = this.#insertNode(kind, n.text, null, newId)
+      this.updateText(id, makeToken(hub))
+      return hub
     })
   }
 
