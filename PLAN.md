@@ -2,6 +2,8 @@
 
 Work through these in order. Each milestone should be usable on an Android phone before moving on. Background, decisions, and the schema are in `CLAUDE.md`.
 
+**Status (2026-10-04):** Milestones 0–7 are implemented. Each is covered by Vitest (data layer) and headless-Chromium checks (`npm run e2e`, phone emulation). Not yet verified on a real Android phone; that's the next step.
+
 ## Milestone 0 — Scaffold and storage
 
 - Vite + Vue 3 + TypeScript project.

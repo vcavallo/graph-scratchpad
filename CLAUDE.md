@@ -55,15 +55,22 @@ Conventions within the model:
 - **Places and people** are ordinary nodes with `kind = 'place'` or `'person'`. They usually have no parent; they exist to be linked to. They're listed in their own index screens.
 - "Backlinks" for a node = incoming `link` edges, each shown with the source node's breadcrumb path (pad → ancestors → item).
 - Deleting a node soft-deletes it and its subtree. Link chips pointing to a deleted node render as struck-through, not as broken tokens.
+- Migration 2 adds `nodes.sort_key`: a fractional key ordering root nodes (pads), since they have no incoming `child` edge to carry order. NULL for everything else.
+- Migration 3 adds `nodes.numbered`: 1 means this node's children are a numbered (ordered) list. The outline shows 1. 2. 3.; the graph lays them out as a column beside the parent, in order (`GraphEdge.index`).
+- Sibling keys are computed against *all* children, including soft-deleted ones, so keys stay unique and restored nodes return to their old position.
+- Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
+- `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once).
 
 ## Code conventions
 
 - All SQL lives in the worker-side data layer (`src/db/`). Components talk to it through a typed async API (`src/db/api.ts`) over `postMessage`. No SQL in components.
 - Tree operations (`createChild`, `indent`, `outdent`, `moveUp`, `moveDown`, `moveSubtree`, `deleteSubtree`) and link reconciliation each run in a single transaction.
+- The outline is optimistic: it applies an operation to its local tree copy first (mirrors in `src/lib/treeOps.ts`, which must match the store's no-op rules), passing a client-generated UUID for new nodes, then calls the worker and reloads. Loads that race a write are discarded and retried (`useLoader`).
 - Schema changes go through numbered migrations keyed on `meta.schema_version`.
 - Unit tests for the data layer with Vitest. The data layer must be testable in Node, so keep the SQLite-specific bootstrap separate from the query logic.
 - Mobile-first UI. Every action reachable by keyboard shortcut also needs an on-screen control, because Android soft keyboards have no Tab key.
-- Test on Android Chrome early and often, not just desktop.
+- Test on Android Chrome early and often, not just desktop. `npm run e2e` drives headless Chromium with Pixel 7 touch emulation; it can't stand in for a real soft keyboard.
+- Deploy with `npm run deploy` (see README): served at https://framework.pirate-emperor.ts.net:10002 on the tailnet.
 
 ## Not in scope for the MVP
 
