@@ -21,6 +21,8 @@ export interface RawNode {
   numbered: number
   /** 1 when this item is a to-do (has a checkbox); 0 for a plain bullet. */
   task: number
+  /** 1 once emptied from the trash; the row stays so the deletion can sync. */
+  purged: number
 }
 
 /** A row of `edges` as stored. */
@@ -200,4 +202,28 @@ export interface DeletedEntry {
   /** Number of nodes deleted together with this one (including itself). */
   count: number
   crumbs: Crumb[]
+}
+
+/** One field of one node as exchanged with the sync server (short keys: it's the wire format). */
+export interface SyncChange {
+  /** Node id. */
+  n: string
+  /** Field: kind, text, done, collapsed, deleted_at, numbered, task, purged, created_at, or pos. */
+  f: string
+  /** Value; for pos, { p: parent id or null, k: sort key }. */
+  v: unknown
+  /** Hybrid logical clock time of the change (see hlc.ts). */
+  h: string
+}
+
+export interface SyncInfo {
+  deviceId: string
+  /** null until sync has been turned on or off on this device. */
+  enabled: boolean | null
+  /** Server sequence number we've pulled up to. */
+  cursor: number
+  /** Identity of the server database we synced with (a new one means start over). */
+  epoch: string | null
+  /** Nodes with changes not yet sent. */
+  pending: number
 }

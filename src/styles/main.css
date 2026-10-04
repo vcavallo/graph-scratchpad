@@ -1547,3 +1547,9 @@ body:has(.edit-toolbar) .toasts {
   background: var(--ink);
   color: var(--on-ink);
 }
+
+/* ------------------------------------------------------------ sync */
+
+.sync-line.error {
+  color: var(--danger);
+}

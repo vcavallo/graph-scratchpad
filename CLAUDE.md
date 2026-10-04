@@ -10,7 +10,8 @@ Core insight: **the outline already is a graph.** Nesting is a `child` edge from
 
 ## Decisions already made
 
-- **Platform:** Progressive web app (PWA), installed to the Android home screen, fully offline after the first load. There is no backend, no accounts, and no sync. All data stays on the device. Static hosting only.
+- **Platform:** Progressive web app (PWA), installed to the Android home screen, fully offline after the first load. Local-first: the device's database is the truth the app works from, and it never waits on the network.
+- **Sync (progressive enhancement):** when the serving site has `/api/sync` (`server/serve.mjs` with `SYNC_DB`), the app syncs in the background. Per-field last-writer-wins by hybrid logical clock, through a small self-hosted server on the tailnet (the Pi). No accounts: the tailnet is the access control. See README "How sync works".
 - **Stack:** Vue 3 + Vite + TypeScript. Use `vite-plugin-pwa` for the service worker and manifest.
 - **Storage:** SQLite compiled to WebAssembly (`@sqlite.org/sqlite-wasm`), running in a Web Worker, using the `opfs-sahpool` VFS. That VFS persists to the browser's private file system (OPFS) and, unlike the plain `opfs` VFS, does **not** need COOP/COEP headers or SharedArrayBuffer.
 - **Durability:** Call `navigator.storage.persist()` on first run. JSON export/import exists early so data is never one cache-clear from loss.
@@ -60,7 +61,8 @@ Conventions within the model:
 - Migration 4 adds `nodes.task`: 1 means a to-do (checkbox), 0 a plain bullet note. Invariants: only items can be to-dos, and only to-dos can be done (`setDone(true)` makes a bullet a to-do; `setTask(false)` unchecks). "Open" everywhere means `task = 1 AND done = 0`. A new item copies the to-do flag of the item next to it (`#taskFor`, mirrored by `taskFor` in treeOps); with no neighbouring item it's a to-do, except under a place/person. Items created from the link picker are bullets. `TreeNode.links` counts live incoming links, excluding finished to-dos.
 - Sibling keys are computed against *all* children, including soft-deleted ones, so keys stay unique and restored nodes return to their old position.
 - Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
-- `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once).
+- `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once), and for sync `device_id`, `sync_enabled`, `sync_cursor`, `sync_epoch`, `sync_schema`.
+- Migration 5 adds `sync_clock` (per node and field: clock time of the last change, and whether it's unsent) with triggers on `nodes` and child `edges`, and `nodes.purged` (emptied from the trash; the row stays as a tombstone). Clock '0' marks the untouched welcome pad (never sent unless edited, dropped when joining a server that has data); '' marks a field not yet received. Sibling ties on sort key break by node id, the same on every device.
 
 ## Code conventions
 
@@ -71,10 +73,11 @@ Conventions within the model:
 - Unit tests for the data layer with Vitest. The data layer must be testable in Node, so keep the SQLite-specific bootstrap separate from the query logic.
 - Mobile-first UI. Every action reachable by keyboard shortcut also needs an on-screen control, because Android soft keyboards have no Tab key.
 - Test on Android Chrome early and often, not just desktop. `npm run e2e` drives headless Chromium with Pixel 7 touch emulation; it can't stand in for a real soft keyboard.
-- Deploy with `npm run deploy` (see README): served at https://framework.pirate-emperor.ts.net:10002 on the tailnet.
+- Deploy with `npm run deploy:pi` (the Pi, https://utility-server-pi.pirate-emperor.ts.net, app + sync) and `npm run deploy` (the Framework, https://framework.pirate-emperor.ts.net:10002, which proxies sync to the Pi). See README.
+- Sync: every write is captured by triggers (migration 5), so Store methods don't need sync code. A new syncing column needs a trigger in a new migration, an entry in `SYNC_COLUMNS` and `#fieldValues` in store.ts, and a test in tests/sync.test.ts.
 
 ## Not in scope for the MVP
 
-Graph editing, typed-edge UI beyond plain links, mirrors, geofencing/location triggers, sync, multi-device, accounts, rich text beyond link chips.
+Graph editing, typed-edge UI beyond plain links, mirrors, geofencing/location triggers, accounts, rich text beyond link chips. (Sync between your own devices is in, via your own server; real-time collaboration isn't.)
 
 See `PLAN.md` for the ordered milestones.

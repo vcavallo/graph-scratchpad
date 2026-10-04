@@ -41,6 +41,7 @@ const PATHS: Record<string, string> = {
   numbered: 'M10 6h10M10 12h10M10 18h10M4 4.5h1.5V9M4 9h3M4 14.5c0-.8.7-1.5 1.5-1.5S7 13.7 7 14.5c0 1.2-3 2-3 4h3',
   checkbox: 'M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8.5 12.5l2.5 2.5 4.5-5',
   linked: `${circle(17.5, 12, 3.5)}M3 12h9M9 8.5l3.5 3.5L9 15.5`,
+  sync: 'M19.5 10A7.5 7.5 0 0 0 6 6.5L4 8.5M4 4v4.5h4.5M4.5 14A7.5 7.5 0 0 0 18 17.5l2-2M20 20v-4.5h-4.5',
 }
 
 const props = withDefaults(defineProps<{ name: string; size?: number; stroke?: number }>(), { size: 22, stroke: 2 })

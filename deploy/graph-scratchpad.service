@@ -1,13 +1,17 @@
-# systemd user unit: serves the deployed build on 127.0.0.1:8742.
+# systemd user unit for this machine (the Framework): serves the deployed build
+# on 127.0.0.1:8742 and passes /api/sync through to the Pi's sync server.
 # Install: cp deploy/graph-scratchpad.service ~/.config/systemd/user/ &&
 #          systemctl --user daemon-reload && systemctl --user enable --now graph-scratchpad
 # Tailnet HTTPS: tailscale serve --bg --https=10002 http://127.0.0.1:8742
+# (The Pi runs the same server from a NixOS module: deploy/nixos/graph-scratchpad.nix.)
 [Unit]
 Description=Graph Scratchpad static server
 After=network.target
 
 [Service]
-ExecStart=/etc/profiles/per-user/vcavallo/bin/node %h/.local/share/graph-scratchpad/serve.mjs %h/.local/share/graph-scratchpad/current 8742
+ExecStart=/etc/profiles/per-user/vcavallo/bin/node %h/.local/share/graph-scratchpad/current/server/serve.mjs %h/.local/share/graph-scratchpad/current/app 8742
+Environment=NODE_NO_WARNINGS=1
+Environment=SYNC_UPSTREAM=https://utility-server-pi.pirate-emperor.ts.net
 Restart=always
 RestartSec=2
 

@@ -785,7 +785,7 @@ describe('to-dos and bullets', () => {
     db.exec(ins, ['i', 'item', 'milk', 1])
     db.exec(ins, ['j', 'item', 'eggs', 0])
     db.exec(ins, ['p', 'place', 'Shop', 1])
-    const old = await makeStore(db)
+    const old = await makeStore({ db })
     expect(old.info().schemaVersion).toBe(LATEST_SCHEMA_VERSION)
     expect(old.getNode('i')).toMatchObject({ task: true, done: true })
     expect(old.getNode('j')).toMatchObject({ task: true, done: false })

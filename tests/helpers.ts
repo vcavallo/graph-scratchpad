@@ -10,10 +10,13 @@ export async function makeDb(): Promise<SqlDb> {
   return wrapOo1(new sqlite3.oo1.DB(':memory:', 'c'))
 }
 
-/** A Store over a database (fresh by default), with a deterministic clock. */
-export async function makeStore(db?: SqlDb): Promise<Store> {
-  let t = 1_700_000_000_000
-  return new Store(db ?? (await makeDb()), { now: () => ++t })
+/**
+ * A Store over a database (fresh by default) with a deterministic clock that
+ * ticks 1 ms per reading, starting at `start`.
+ */
+export async function makeStore(opts: { db?: SqlDb; start?: number } = {}): Promise<Store> {
+  let t = opts.start ?? 1_700_000_000_000
+  return new Store(opts.db ?? (await makeDb()), { now: () => ++t })
 }
 
 /** Compact outline of a subtree: ["a", ["b", "c"]] style, using text. */

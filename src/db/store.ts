@@ -3,6 +3,7 @@ import type { SqlDb } from './sql'
 import { LATEST_SCHEMA_VERSION, migrate, schemaVersion } from './migrations'
 import { labelize, makeToken, parseTokens } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
+import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
   type Backlink,
@@ -24,6 +25,8 @@ import {
   type RefInfo,
   type SearchOptions,
   type SearchResult,
+  type SyncChange,
+  type SyncInfo,
   type TreeNode,
 } from './types'
 
@@ -54,7 +57,7 @@ interface SiblingRow {
   sort_key: string | null
 }
 
-const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task'
+const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged'
 const MAX_LABEL_DEPTH = 3
 
 export class StoreError extends Error {
@@ -86,13 +89,31 @@ function cleanLabel(s: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
-function compareKeys(a: { sort_key: string | null; edge_id: string }, b: { sort_key: string | null; edge_id: string }) {
+/**
+ * Sibling order: by sort key, then by node id. (Two devices can pick the same
+ * key for different nodes; the node id breaks the tie the same way on both.)
+ */
+function compareKeys(a: { sort_key: string | null; dst: string }, b: { sort_key: string | null; dst: string }) {
   const ak = a.sort_key ?? ''
   const bk = b.sort_key ?? ''
   if (ak < bk) return -1
   if (ak > bk) return 1
-  return a.edge_id < b.edge_id ? -1 : a.edge_id > b.edge_id ? 1 : 0
+  return a.dst < b.dst ? -1 : a.dst > b.dst ? 1 : 0
 }
+
+/** Fields that sync, and how to clean a value received for each. */
+const SYNC_COLUMNS: Record<string, (v: unknown) => string | number | null> = {
+  kind: (v) => (KINDS.includes(v as Kind) ? (v as Kind) : 'item'),
+  text: (v) => (typeof v === 'string' ? v : ''),
+  done: (v) => (v ? 1 : 0),
+  collapsed: (v) => (v ? 1 : 0),
+  deleted_at: (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null),
+  numbered: (v) => (v ? 1 : 0),
+  task: (v) => (v ? 1 : 0),
+  purged: (v) => (v ? 1 : 0),
+  created_at: (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0),
+}
+const SYNC_FIELDS = new Set([...Object.keys(SYNC_COLUMNS), 'pos'])
 
 /**
  * The data layer. Every public method is synchronous and runs against a
@@ -103,13 +124,36 @@ export class Store {
   readonly db: SqlDb
   #now: () => number
   #uuid: () => string
+  #hlc: Hlc
 
   constructor(db: SqlDb, deps: StoreDeps = {}) {
     this.db = db
     this.#now = deps.now ?? (() => Date.now())
     this.#uuid = deps.uuid ?? (() => crypto.randomUUID())
     db.exec('PRAGMA foreign_keys = ON')
+    db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)')
+    this.#hlc = new Hlc(this.#deviceId(), this.#now)
+    // The sync triggers stamp every change with this (see migration 5).
+    db.createFunction('hlc_now', () => this.#hlc.tick())
     migrate(db)
+    // Never hand out a time earlier than one already recorded (the device's clock may have moved back).
+    this.#hlc.observe(db.get<{ h: string | null }>('SELECT max(hlc) AS h FROM sync_clock')?.h)
+  }
+
+  #meta(key: string): string | undefined {
+    return this.db.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', [key])?.value
+  }
+
+  #setMeta(key: string, value: string): void {
+    this.db.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [key, value])
+  }
+
+  #deviceId(): string {
+    const existing = this.#meta('device_id')
+    if (existing) return existing
+    const id = this.#uuid().replace(/-/g, '').slice(0, 12)
+    this.#setMeta('device_id', id)
+    return id
   }
 
   // ---------------------------------------------------------------- helpers
@@ -570,7 +614,7 @@ export class Store {
   restoreSubtree(id: string): number {
     return this.db.tx(() => {
       const n = this.#raw(id)
-      if (!n) throw new StoreError(`No node ${id}`, 'not_found')
+      if (!n || n.purged) throw new StoreError(`No node ${id}`, 'not_found')
       if (n.deleted_at === null) return 0
       let restored = 0
       const pe = this.#parentEdge(id)
@@ -726,7 +770,11 @@ export class Store {
       const row = this.db.get<{ value: string }>(`SELECT value FROM meta WHERE key = 'inbox_id'`)
       const existing = row ? this.#raw(row.value) : undefined
       if (existing && existing.deleted_at === null) return existing.id
-      const id = this.createPad('Inbox')
+      // Another device's Inbox may have arrived by sync: use it rather than making a second one.
+      const synced = this.db.get<{ id: string }>(
+        `SELECT id FROM nodes WHERE kind = 'pad' AND text = 'Inbox' AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1`,
+      )
+      const id = synced?.id ?? this.createPad('Inbox')
       this.db.exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('inbox_id', ?)`, [id])
       return id
     })
@@ -758,15 +806,18 @@ export class Store {
       add(pad, 'Tap a bullet to open that item and see what links to it')
       add(pad, 'Settings → Export saves a backup of everything')
       add(store, 'Closes at 6 on Sundays')
+      // The welcome pad is older than any real edit, and isn't sent by sync on its own (see syncPrepareJoin).
+      this.db.exec(`UPDATE sync_clock SET hlc = '${ZERO_HLC}', local = 0`)
       return pad
     })
   }
 
   // ---------------------------------------------------------------- reading
 
+  /** A node, or null if it doesn’t exist (or was emptied from the trash). */
   getNode(id: string): NodeInfo | null {
     const r = this.#raw(id)
-    return r ? toInfo(r) : null
+    return r && !r.purged ? toInfo(r) : null
   }
 
   getChildren(id: string): NodeInfo[] {
@@ -818,7 +869,7 @@ export class Store {
     }
     const strip = (t: TreeNode & { _key?: string; _edge?: string }): TreeNode => {
       const kids = (t.children as (TreeNode & { _key: string; _edge: string })[]).sort((a, b) =>
-        compareKeys({ sort_key: a._key, edge_id: a._edge }, { sort_key: b._key, edge_id: b._edge }),
+        compareKeys({ sort_key: a._key, dst: a.id }, { sort_key: b._key, dst: b.id }),
       )
       return {
         id: t.id,
@@ -863,7 +914,7 @@ export class Store {
     const out: Record<string, RefInfo> = {}
     for (const id of ids) {
       const r = res.rows.get(id)
-      out[id] = r
+      out[id] = r && !r.purged
         ? {
             id,
             kind: r.kind,
@@ -906,7 +957,7 @@ export class Store {
   /** Everything the node screen needs in one round trip. */
   getNodeView(id: string): NodeViewData {
     const raw = this.#raw(id)
-    if (!raw) throw new StoreError(`No node ${id}`, 'not_found')
+    if (!raw || raw.purged) throw new StoreError(`No node ${id}`, 'not_found')
     const tree = this.getTree(id)
     const backlinks = this.getBacklinks(id)
     const outgoingIds = this.db
@@ -1127,7 +1178,7 @@ export class Store {
       `SELECT ${NODE_COLS.split(', ').map((c) => 'n.' + c).join(', ')} FROM nodes n
        LEFT JOIN edges pe ON pe.dst = n.id AND pe.type = 'child'
        LEFT JOIN nodes p ON p.id = pe.src
-       WHERE n.deleted_at IS NOT NULL
+       WHERE n.deleted_at IS NOT NULL AND n.purged = 0
          AND (p.id IS NULL OR p.deleted_at IS NULL)
        ORDER BY n.deleted_at DESC
        LIMIT 200`,
@@ -1149,12 +1200,16 @@ export class Store {
     })
   }
 
-  /** Permanently remove soft-deleted nodes (and every edge touching them). */
+  /**
+   * Empty the trash: erase the text of soft-deleted nodes and drop their links.
+   * The rows stay behind as tombstones (purged = 1) so other devices learn
+   * about the deletion when they sync.
+   */
   purgeDeleted(): number {
     return this.db.tx(() => {
       const dead = `SELECT id FROM nodes WHERE deleted_at IS NOT NULL`
-      this.db.exec(`DELETE FROM edges WHERE src IN (${dead}) OR dst IN (${dead})`)
-      this.db.exec(`DELETE FROM nodes WHERE deleted_at IS NOT NULL`)
+      this.db.exec(`DELETE FROM edges WHERE type = 'link' AND (src IN (${dead}) OR dst IN (${dead}))`)
+      this.db.exec(`UPDATE nodes SET text = '', purged = 1 WHERE deleted_at IS NOT NULL AND purged = 0`)
       return this.db.get<{ c: number }>('SELECT changes() AS c')?.c ?? 0
     })
   }
@@ -1164,6 +1219,288 @@ export class Store {
       schemaVersion: schemaVersion(this.db),
       nodeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM nodes WHERE deleted_at IS NULL')?.c ?? 0,
       edgeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM edges')?.c ?? 0,
+    }
+  }
+
+  // ------------------------------------------------------------------ sync
+  //
+  // Each node is a set of fields (see SYNC_COLUMNS, plus 'pos'), and each field
+  // keeps the newest value by hybrid logical clock. The triggers from
+  // migration 5 record local changes in sync_clock; the sync client (sync.ts)
+  // sends them with syncCollect/syncAck and merges the server's with syncApply.
+
+  /** The current value of every syncing field of a node. */
+  #fieldValues(id: string): Record<string, unknown> | null {
+    const r = this.#raw(id)
+    if (!r) return null
+    const pe = this.#parentEdge(id)
+    return {
+      kind: r.kind,
+      text: r.text,
+      done: r.done,
+      collapsed: r.collapsed,
+      deleted_at: r.deleted_at,
+      numbered: r.numbered,
+      task: r.task,
+      purged: r.purged,
+      created_at: r.created_at,
+      pos: pe ? { p: pe.src, k: pe.sort_key } : { p: null, k: r.sort_key },
+    }
+  }
+
+  syncInfo(): SyncInfo {
+    const enabled = this.#meta('sync_enabled')
+    // A new schema may bring fields this device ignored before: pull everything again.
+    const sameSchema = this.#meta('sync_schema') === String(LATEST_SCHEMA_VERSION)
+    return {
+      deviceId: this.#hlc.device,
+      enabled: enabled === undefined ? null : enabled === '1',
+      cursor: sameSchema ? Number(this.#meta('sync_cursor') ?? 0) : 0,
+      epoch: this.#meta('sync_epoch') ?? null,
+      pending: this.db.get<{ c: number }>('SELECT count(DISTINCT node) AS c FROM sync_clock WHERE local = 1')?.c ?? 0,
+    }
+  }
+
+  syncSetEnabled(on: boolean): void {
+    this.#setMeta('sync_enabled', on ? '1' : '0')
+  }
+
+  /**
+   * Before the first sync on this device: if it holds nothing but the untouched
+   * welcome pad, drop it, so joining doesn't add a second copy to everyone.
+   * Returns true if it did.
+   */
+  syncPrepareJoin(): boolean {
+    return this.db.tx(() => {
+      if (!this.db.get('SELECT 1 FROM nodes LIMIT 1')) return false
+      if (this.db.get(`SELECT 1 FROM sync_clock WHERE hlc <> '${ZERO_HLC}' LIMIT 1`)) return false
+      this.db.exec('DELETE FROM edges')
+      this.db.exec('DELETE FROM nodes')
+      this.db.exec(`DELETE FROM meta WHERE key = 'inbox_id'`)
+      return true
+    })
+  }
+
+  /**
+   * Called with the server's database identity. A server we haven't synced
+   * with (or one that was reset) gets everything again: every field is marked
+   * unsent and we pull from the start. Returns true if that happened.
+   */
+  syncBegin(epoch: string): boolean {
+    if (this.#meta('sync_epoch') === epoch) return false
+    this.db.tx(() => {
+      this.db.exec(`UPDATE sync_clock SET local = 1 WHERE hlc NOT IN ('${ZERO_HLC}', '${UNKNOWN_HLC}')`)
+      this.#setMeta('sync_epoch', epoch)
+      this.#setMeta('sync_cursor', '0')
+      this.#setMeta('sync_schema', String(LATEST_SCHEMA_VERSION))
+    })
+    return true
+  }
+
+  /** Up to `limit` unsent field changes, with their current values. */
+  syncCollect(limit = 2000): SyncChange[] {
+    return this.db.tx(() => {
+      // Welcome-pad fields (clock 0) have never been sent. Once a node with a
+      // real change needs them (it's that node, an ancestor, or a link target),
+      // give them a real clock so they go too and the server gets whole nodes.
+      this.db.exec(`
+        WITH RECURSIVE need(id) AS (
+          SELECT DISTINCT node FROM sync_clock WHERE local = 1
+          UNION
+          SELECT e.src FROM edges e JOIN need ON e.dst = need.id WHERE e.type = 'child'
+          UNION
+          SELECT e.dst FROM edges e JOIN need ON e.src = need.id WHERE e.type = 'link'
+        )
+        UPDATE sync_clock SET hlc = hlc_now(), local = 1
+        WHERE hlc = '${ZERO_HLC}' AND node IN (SELECT id FROM need)`)
+      const rows = this.db.all<{ node: string; field: string; hlc: string }>(
+        'SELECT node, field, hlc FROM sync_clock WHERE local = 1 ORDER BY node, field LIMIT ?',
+        [limit],
+      )
+      const values = new Map<string, Record<string, unknown> | null>()
+      const out: SyncChange[] = []
+      for (const r of rows) {
+        if (!values.has(r.node)) values.set(r.node, this.#fieldValues(r.node))
+        const v = values.get(r.node)
+        if (!v || !(r.field in v)) continue
+        out.push({ n: r.node, f: r.field, v: v[r.field], h: r.hlc })
+      }
+      return out
+    })
+  }
+
+  /** The server has these: mark them sent, unless they've changed again since. */
+  syncAck(changes: Pick<SyncChange, 'n' | 'f' | 'h'>[]): void {
+    this.db.tx(() => {
+      for (const c of changes) {
+        this.db.exec('UPDATE sync_clock SET local = 0 WHERE node = ? AND field = ? AND hlc = ? AND local = 1', [c.n, c.f, c.h])
+      }
+    })
+  }
+
+  /**
+   * Merge changes from the server: each field takes the value with the newer
+   * clock. Then rebuild links from changed text, keep "only items are to-dos,
+   * only to-dos are done", and undo any loop that two devices' moves made in
+   * the tree. Those repairs are ordinary local edits, so they sync back.
+   * Returns the number of fields that changed.
+   */
+  syncApply(changes: SyncChange[], at?: { cursor: number; epoch: string }): number {
+    return this.db.tx(() => {
+      const saveCursor = () => {
+        if (!at) return
+        this.#setMeta('sync_cursor', String(at.cursor))
+        this.#setMeta('sync_epoch', at.epoch)
+        this.#setMeta('sync_schema', String(LATEST_SCHEMA_VERSION))
+      }
+      const valid = changes.filter(
+        (c) => c && UUID_RE.test(c.n) && SYNC_FIELDS.has(c.f) && typeof c.h === 'string' && c.h.length <= 80,
+      )
+      for (const c of valid) this.#hlc.observe(c.h)
+      const nodeIds = [...new Set(valid.map((c) => c.n))]
+      const clock = new Map<string, string>()
+      const ck = (n: string, f: string) => `${n} ${f}`
+      if (nodeIds.length) {
+        for (const r of this.db.all<{ node: string; field: string; hlc: string }>(
+          'SELECT node, field, hlc FROM sync_clock WHERE node IN (SELECT value FROM json_each(?))',
+          [JSON.stringify(nodeIds)],
+        )) {
+          clock.set(ck(r.node, r.field), r.hlc)
+        }
+      }
+      // Newest per field wins; within one batch, the last newest one.
+      const best = new Map<string, SyncChange>()
+      for (const c of valid) {
+        const k = ck(c.n, c.f)
+        const mine = clock.get(k)
+        const prev = best.get(k)
+        if ((mine === undefined || c.h > mine) && (!prev || c.h > prev.h)) best.set(k, c)
+      }
+      const winners = [...best.values()]
+      if (!winners.length) {
+        saveCursor()
+        return 0
+      }
+
+      const fresh = new Set<string>()
+      const ensure = (id: string) => {
+        if (this.#raw(id)) return
+        const t = this.#now()
+        this.db.exec(`INSERT INTO nodes (id, kind, text, created_at, updated_at) VALUES (?, 'item', '', ?, ?)`, [id, t, t])
+        fresh.add(id)
+      }
+      const textChanged = new Set<string>()
+      const flagsChanged = new Set<string>()
+      const moved: string[] = []
+      for (const c of winners) {
+        if (c.f === 'pos') continue
+        ensure(c.n)
+        this.db.exec(`UPDATE nodes SET ${c.f} = ? WHERE id = ?`, [SYNC_COLUMNS[c.f](c.v), c.n])
+        if (c.f === 'text') textChanged.add(c.n)
+        if (c.f === 'kind' || c.f === 'task' || c.f === 'done') flagsChanged.add(c.n)
+      }
+      // Positions last, once every node in the batch exists.
+      for (const c of winners) {
+        if (c.f !== 'pos') continue
+        ensure(c.n)
+        const v = (c.v ?? {}) as { p?: unknown; k?: unknown }
+        const parent = typeof v.p === 'string' && UUID_RE.test(v.p) && v.p !== c.n ? v.p : null
+        const key = typeof v.k === 'string' ? v.k : null
+        const pe = this.#parentEdge(c.n)
+        if (parent === null) {
+          if (pe) this.db.exec('DELETE FROM edges WHERE id = ?', [pe.id])
+          this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [key, c.n])
+        } else {
+          ensure(parent) // a stand-in until the parent's own fields arrive
+          if (pe) this.db.exec('UPDATE edges SET src = ?, sort_key = ? WHERE id = ?', [parent, key, pe.id])
+          else
+            this.db.exec(
+              `INSERT INTO edges (id, src, dst, type, sort_key, created_at) VALUES (?, ?, ?, 'child', ?, ?)`,
+              [this.#uuid(), parent, c.n, key, this.#now()],
+            )
+          this.db.exec('UPDATE nodes SET sort_key = NULL WHERE id = ? AND sort_key IS NOT NULL', [c.n])
+          moved.push(c.n)
+        }
+      }
+
+      // The writes above went through the triggers; give the clocks their real values.
+      if (fresh.size) {
+        this.db.exec(`UPDATE sync_clock SET hlc = '${UNKNOWN_HLC}', local = 0 WHERE node IN (SELECT value FROM json_each(?))`, [
+          JSON.stringify([...fresh]),
+        ])
+      }
+      const newest = new Map<string, string>()
+      for (const c of winners) {
+        this.db.exec('INSERT OR REPLACE INTO sync_clock (node, field, hlc, local) VALUES (?, ?, ?, 0)', [c.n, c.f, c.h])
+        if (c.h > (newest.get(c.n) ?? '')) newest.set(c.n, c.h)
+      }
+      for (const [id, h] of newest) {
+        this.db.exec('UPDATE nodes SET updated_at = max(updated_at, ?) WHERE id = ?', [hlcWall(h), id])
+      }
+
+      // Links follow the text. New nodes may also complete links other nodes already had in their text.
+      const relink = new Set(textChanged)
+      if (fresh.size > 40) {
+        for (const r of this.db.all<{ id: string }>(`SELECT id FROM nodes WHERE instr(text, '[[') > 0`)) relink.add(r.id)
+      } else {
+        for (const id of fresh) {
+          for (const r of this.db.all<{ id: string }>('SELECT id FROM nodes WHERE instr(text, ?) > 0', [`[[${id}]]`])) {
+            relink.add(r.id)
+          }
+        }
+      }
+      for (const id of relink) {
+        const r = this.#raw(id)
+        if (r) this.#reconcileLinks(id, r.text)
+      }
+
+      // Only items are to-dos and only to-dos are done. When two devices' edits
+      // disagree, the newer of the two fields decides.
+      for (const id of flagsChanged) {
+        const r = this.#raw(id)
+        if (!r) continue
+        if (r.kind !== 'item' && (r.task || r.done)) {
+          this.db.exec('UPDATE nodes SET task = 0, done = 0 WHERE id = ?', [id])
+        } else if (r.done && !r.task) {
+          const at = (f: string) => this.db.get<{ hlc: string }>('SELECT hlc FROM sync_clock WHERE node = ? AND field = ?', [id, f])?.hlc ?? ''
+          if (at('done') > at('task')) this.db.exec('UPDATE nodes SET task = 1 WHERE id = ?', [id])
+          else this.db.exec('UPDATE nodes SET done = 0 WHERE id = ?', [id])
+        }
+      }
+
+      this.#breakCycles(moved)
+      saveCursor()
+      return winners.length
+    })
+  }
+
+  /**
+   * Two devices can each move a node under the other ("A into B" here, "B into
+   * A" there). Merged, that's a loop with no way back to a pad. Break each loop
+   * at its most recently moved node by filing that node under the Inbox.
+   */
+  #breakCycles(moved: string[]): void {
+    const parentOf = (id: string) => this.#parentEdge(id)?.src ?? null
+    const done = new Set<string>()
+    for (const start of moved) {
+      if (done.has(start)) continue
+      const path: string[] = []
+      const seen = new Set<string>()
+      let cur: string | null = start
+      while (cur && !seen.has(cur) && path.length < 10_000) {
+        seen.add(cur)
+        path.push(cur)
+        cur = parentOf(cur)
+      }
+      path.forEach((p) => done.add(p))
+      if (!cur || !seen.has(cur)) continue // reached a root: no loop
+      const loop = path.slice(path.indexOf(cur))
+      const posAt = (id: string) =>
+        this.db.get<{ hlc: string }>(`SELECT hlc FROM sync_clock WHERE node = ? AND field = 'pos'`, [id])?.hlc ?? ''
+      const latest = loop.reduce((a, b) => (posAt(b) > posAt(a) ? b : a))
+      const inbox = this.inboxId()
+      const key = this.#keyAt(inbox, 'last', latest)
+      this.db.exec(`UPDATE edges SET src = ?, sort_key = ? WHERE dst = ? AND type = 'child'`, [inbox, key, latest])
     }
   }
 
@@ -1188,7 +1525,7 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       for (const n of file.nodes) {
         this.db.exec(
-          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             n.id,
             n.kind,
@@ -1201,6 +1538,7 @@ export class Store {
             n.sort_key,
             n.numbered,
             n.task,
+            n.purged,
           ],
         )
       }
@@ -1266,6 +1604,7 @@ export function validateExport(data: unknown): ExportFile {
       sort_key: isStr(n.sort_key) ? n.sort_key : null,
       numbered: n.numbered ? 1 : 0,
       task: task ? 1 : 0,
+      purged: n.purged ? 1 : 0,
     })
   }
 

@@ -6,6 +6,7 @@ import { wrapOo1 } from './sql'
 import { Store, StoreError } from './store'
 import type { DbInfo } from './types'
 import type { WorkerRequest, WorkerMessage } from './protocol'
+import { SyncRunner } from './syncRunner'
 
 interface WorkerScope {
   postMessage(msg: WorkerMessage): void
@@ -20,6 +21,7 @@ const LOCK_NAME = 'graph-scratchpad-db'
 let store: Store | null = null
 let storage: DbInfo['storage'] = 'memory'
 let sqliteVersion = ''
+let sync: SyncRunner | null = null
 const queue: WorkerRequest[] = []
 
 const METHODS = new Set(Object.getOwnPropertyNames(Store.prototype).filter((n) => n !== 'constructor'))
@@ -29,8 +31,28 @@ scope.onmessage = (e) => {
   else handle(e.data)
 }
 
+/** Requests about sync itself, answered by the runner rather than the Store. */
+const SYNC_CALLS: Record<string, (args: unknown[]) => Promise<unknown>> = {
+  syncStatus: async () => ({ ...sync!.status }),
+  syncNow: async () => {
+    await sync!.run()
+    return { ...sync!.status }
+  },
+  syncEnable: (args) => sync!.setEnabled(args[0] === true),
+  syncReady: () => sync!.ready(),
+}
+
 function handle(req: WorkerRequest): void {
   const s = store!
+  const syncCall = SYNC_CALLS[req.method]
+  if (syncCall) {
+    syncCall(req.args).then(
+      (result) => scope.postMessage({ type: 'result', id: req.id, ok: true, result, changed: false }),
+      (err: Error) =>
+        scope.postMessage({ type: 'result', id: req.id, ok: false, error: { name: err.name, message: err.message } }),
+    )
+    return
+  }
   if (req.method === 'dbInfo') {
     const info: DbInfo = { ...s.info(), storage, sqliteVersion }
     scope.postMessage({ type: 'result', id: req.id, ok: true, result: info, changed: false })
@@ -49,7 +71,9 @@ function handle(req: WorkerRequest): void {
   try {
     const fn = (s as unknown as Record<string, (...a: unknown[]) => unknown>)[req.method]
     const result = fn.apply(s, req.args)
-    scope.postMessage({ type: 'result', id: req.id, ok: true, result, changed: s.db.totalChanges() !== before })
+    const changed = s.db.totalChanges() !== before
+    scope.postMessage({ type: 'result', id: req.id, ok: true, result, changed })
+    if (changed && !req.method.startsWith('sync')) sync?.schedule()
   } catch (err) {
     const e = err as Error
     scope.postMessage({
@@ -76,8 +100,15 @@ async function open(): Promise<void> {
     storage = 'memory'
   }
   store = new Store(wrapOo1(db))
+  sync = new SyncRunner(store, new URL('/api/sync', self.location.origin).href, (status, changed) => {
+    scope.postMessage({ type: 'sync', status })
+    if (changed) scope.postMessage({ type: 'changed' })
+  })
   scope.postMessage({ type: 'ready', storage, reason, sqliteVersion })
   for (const req of queue.splice(0)) handle(req)
+  // Only a database that persists syncs; an in-memory fallback would push nothing useful.
+  if (storage === 'opfs-sahpool') void sync.start()
+  else sync.status.checked = true
 }
 
 async function start(): Promise<void> {

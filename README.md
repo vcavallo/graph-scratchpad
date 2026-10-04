@@ -1,6 +1,6 @@
 # Graph Scratchpad
 
-A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device.
+A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device, and it syncs between your devices through a small server of your own when it can reach one.
 
 <p align="center">
   <img src="docs/screenshots/outline.png" width="300" alt="A pad called Saturday: a numbered list of to-dos with chips linking to places, a person, a grocery list and a waiting state; a grocery checklist showing 1/3 done and 1 link; plain bullet notes">
@@ -25,6 +25,7 @@ See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for miles
 - **Linked here.** A line that other lines link to shows a count at its right; tap it to see them: open to-dos first, then plain mentions, then the done ones (folded away). Finished to-dos don't count. This makes any line a status or tag: put "waiting" in a States pad, link to-dos to it with @, and its page lists what you're waiting on.
 - **Places / People** tabs list every place and person with their open to-do counts. Check items off right from a place's page.
 - **Graph** (the node icon at the top right of any item) shows its neighborhood 1–3 steps out. Solid lines are nesting and dashed arrows are links; to-dos are boxes (ticked and dimmed when done) and notes are circles. Drag nodes around; tap one to make it the focus (back steps to the previous one); **Open** on the card goes to its page.
+- **Sync.** When the site it's served from has a sync server, the app turns sync on by itself and says so once. Every change is saved on the device first and sent in the background: shortly after you edit, when the app comes back to the foreground or the network returns, and right away when another device changes something. Offline, nothing changes except that changes wait. A new device downloads your lists instead of showing the welcome pad. Settings → Sync shows the state, has **Sync now**, and can turn it off for this device.
 - **Settings** shows whether storage is persistent and lets you export or import a JSON backup. **Trash** lets you restore deleted items.
 - Pasting several lines creates one item per line, with `-` and `*` markers stripped. Lines with `[ ]` or `[x]` become to-dos (checked off for `[x]`); the rest follow the line you pasted into.
 
@@ -49,29 +50,39 @@ The e2e suites (`e2e/*.mjs`) use `playwright-core` with the system Chromium (`/r
 - `src/db/api.ts`: typed `postMessage` client (`api.indent(id)` etc.), derived from the Store's method types.
 - `src/components/Outline.vue`: the editor. It applies each operation to a local copy of the tree immediately (with client-generated UUIDs) so focus moves inside the key handler and the Android keyboard stays up, then sends the same operation to the worker and reloads.
 - `src/components/EditableText.vue`: one contenteditable line with atomic link chips; caret offsets are measured in stored-text units.
+- `src/db/sync.ts`, `src/db/syncRunner.ts`, `src/db/hlc.ts`: the sync client (see below). `server/serve.mjs` serves the app and `/api/sync`; `server/sync-server.mjs` is the server's merge logic, on Node's built-in SQLite.
 
-## Hosting on this machine (tailnet)
+### How sync works
 
-The build is served by a tiny static server running as a systemd user service, published on the tailnet over HTTPS by `tailscale serve`. HTTPS is required for the service worker and OPFS.
+Each node is a handful of fields (text, done, to-do, kind, collapsed, numbered, deleted, purged, and its place: parent + sort key). Every field remembers when it last changed, as a hybrid logical clock time: wall-clock based, but it never runs backwards and always moves past anything seen from another device. Triggers on the tables (migration 5) record each local change in `sync_clock`, so the Store's methods know nothing about sync.
 
-```sh
-npm run deploy     # build + unit tests, then publish a new release
-```
-
-`deploy` copies `dist/` into `~/.local/share/graph-scratchpad/releases/<timestamp>/`, gzips text assets, and atomically repoints the `current` symlink. The server picks it up on the next request; the installed app shows "A new version is ready" and reloads when you tap it.
-
-One-time setup (already done on the Framework, except the step that needs root):
+A sync round trip sends the fields not yet sent and gets back every field the server has newer than this device's cursor. Each field keeps whichever value is newest, so editing a line's text on the phone and checking it off on the desktop both survive; two edits to the same field keep the later one. Links aren't sent; each device rebuilds them from the text. After merging, the device repairs what a merge can break, as ordinary local edits that sync back: a to-do that's done but not a to-do (the newer of the two fields wins), and a loop from two devices moving lines into each other (the most recently moved line goes to the Inbox). Emptying the trash leaves tombstones so it reaches other devices. The server's database has an identity; if it's ever replaced, devices notice and send it everything again. `tests/sync.test.ts` checks three devices converge after hundreds of random edits; `SYNC_FUZZ=50 npx vitest run tests/sync.test.ts` soaks it.
 
 ```sh
-cp deploy/graph-scratchpad.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now graph-scratchpad   # serves 127.0.0.1:8742
-sudo tailscale serve --bg --https=10002 http://127.0.0.1:8742
+SYNC_DB=/tmp/sync.sqlite3 npm run serve   # app + sync server on 127.0.0.1:8742, for local testing
 ```
 
-Then open **https://framework.pirate-emperor.ts.net:10002** in Chrome on the phone and choose "Add to Home screen" / "Install app".
+## Hosting (tailnet)
+
+HTTPS is required for the service worker and OPFS; `tailscale serve` provides it, and the tailnet is the access control (the server listens on localhost only).
+
+- **The Pi** (`utility-server-pi`, NixOS) is the home: **https://utility-server-pi.pirate-emperor.ts.net** serves the app and the sync server, whose database is `/var/lib/graph-scratchpad/sync/sync.sqlite3` with a copy saved daily to `sync/backups/` (seven kept).
+- **The Framework** still serves the app at **https://framework.pirate-emperor.ts.net:10002**, passing `/api/sync` through to the Pi, so an install from there syncs with the same server.
+
+```sh
+npm run deploy:pi  # build + unit tests, then publish a release to the Pi over ssh
+npm run deploy     # the same, to this machine
+```
+
+A release is the built app (`app/`, with `.gz` siblings) plus the server (`server/`), copied to `releases/<timestamp>/` with `current` repointed atomically. New static files are live on the next request; the server restarts only when its code changed. The installed app shows "A new version is ready" and reloads when you tap it.
+
+On the Pi, Nix provides the runtime: `deploy/nixos/graph-scratchpad.nix` is a NixOS module (copied into the Pi's config as `/etc/nixos/modules/system/graph-scratchpad.nix` and enabled in `hosts/utility-server-pi/default.nix` with `services.graph-scratchpad.enable = true;`). It runs `serve.mjs` with nixpkgs' Node 22 as a hardened system service and publishes it with `tailscale serve` on port 443. App deploys don't need a rebuild; changes to the module do (`sudo nixos-rebuild switch --flake /etc/nixos#utility-server-pi`).
+
+On the Framework it's a systemd user unit (`deploy/graph-scratchpad.service`, installed in `~/.config/systemd/user/`) published with `tailscale serve --bg --https=10002 http://127.0.0.1:8742`.
 
 ## Data safety
 
-- Data lives in the browser's origin-private file system for that exact origin (`https://framework.pirate-emperor.ts.net:10002`). A different host or port is a different, empty database.
+- Data lives in the browser's origin-private file system for that exact origin. A different host or port is a different database; with sync on, a new origin fills itself from the server.
+- With sync on, the Pi keeps a copy of everything, plus daily snapshots. Importing a backup while sync is on merges it in (its version of each entry wins) instead of replacing everything.
 - The app calls `navigator.storage.persist()` on first run; Settings shows whether it was granted. Installed PWAs on Android usually get it.
 - Uninstalling the app or clearing site data deletes everything. Export a backup from Settings first.

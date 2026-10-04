@@ -13,6 +13,8 @@ export interface SqlDb {
   tx<T>(fn: () => T): T
   /** Total rows changed since the connection opened. */
   totalChanges(): number
+  /** Register a zero-argument SQL function (used by the sync triggers). */
+  createFunction(name: string, fn: () => string | number | null): void
   close(): void
 }
 
@@ -21,6 +23,7 @@ export interface Oo1Like {
   // oo1.DB.exec is heavily overloaded; we only ever call the options form.
   exec(opts: any): unknown
   changes(total?: boolean, sixtyFour?: boolean): number | bigint
+  createFunction(opts: any): unknown
   close(): void
 }
 
@@ -65,6 +68,10 @@ export function wrapOo1(db: Oo1Like): SqlDb {
     },
     totalChanges() {
       return Number(db.changes(true))
+    },
+    createFunction(name, fn) {
+      // innocuous: allowed in triggers even when the schema isn't trusted.
+      db.createFunction({ name, xFunc: () => fn(), arity: 0, innocuous: true })
     },
     close() {
       db.close()

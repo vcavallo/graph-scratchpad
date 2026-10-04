@@ -7,7 +7,7 @@ import NodePicker from './components/NodePicker.vue'
 import ActionSheet from './components/ActionSheet.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import Toasts from './components/Toasts.vue'
-import { dbState } from './db/api'
+import { dbState, syncState } from './db/api'
 import { editing } from './state/focus'
 import { closePicker, closeSheet, confirmState, pickerState, toast } from './state/ui'
 
@@ -28,6 +28,14 @@ function applyUpdate() {
 }
 
 const chromeHidden = computed(() => !!editing.key || !!pickerState.value)
+
+// The first time this device finds the site's sync server, say so once.
+watch(
+  () => syncState.autoEnabled,
+  (on) => {
+    if (on) toast(`Syncing with ${syncState.server || 'this server'}. Your lists are kept there too.`, { ms: 6000 })
+  },
+)
 
 // Android's back button navigates; don't leave an overlay over the next page.
 const route = useRoute()

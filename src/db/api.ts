@@ -5,7 +5,7 @@
 import { reactive } from 'vue'
 import type { Store } from './store'
 import type { DbInfo } from './types'
-import type { WorkerMessage, WorkerError } from './protocol'
+import type { SyncStatus, WorkerMessage, WorkerError } from './protocol'
 
 type Fn = (...args: never[]) => unknown
 type Remote<T> = {
@@ -13,7 +13,15 @@ type Remote<T> = {
     ? (...args: A) => Promise<R>
     : never
 }
-export type Api = Remote<Store> & { dbInfo(): Promise<DbInfo> }
+export type Api = Remote<Store> & {
+  dbInfo(): Promise<DbInfo>
+  syncStatus(): Promise<SyncStatus>
+  /** Sync now (or wait for the run in progress). */
+  syncNow(): Promise<SyncStatus>
+  syncEnable(on: boolean): Promise<SyncStatus>
+  /** Resolves after the first sync attempt (or a few seconds, whichever is first). */
+  syncReady(): Promise<SyncStatus>
+}
 
 export class ApiError extends Error {
   code?: string
@@ -38,7 +46,22 @@ export const dbState = reactive({
   writesPending: 0,
 })
 
-const READ_PREFIXES = ['get', 'list', 'search', 'info', 'export', 'dbInfo']
+/** Latest sync status from the worker. */
+export const syncState = reactive<SyncStatus>({
+  available: false,
+  checked: false,
+  server: '',
+  enabled: false,
+  state: 'off',
+  lastSync: null,
+  error: '',
+  pending: 0,
+  cursor: 0,
+  autoEnabled: false,
+})
+
+// Sync calls don't count as writes: a sync that merges something reports it with a 'changed' message.
+const READ_PREFIXES = ['get', 'list', 'search', 'info', 'export', 'dbInfo', 'sync']
 const isRead = (method: string) => READ_PREFIXES.some((p) => method.startsWith(p))
 
 let worker: Worker | null = null
@@ -62,6 +85,12 @@ function ensureWorker(): Worker {
       case 'fatal':
         dbState.status = 'fatal'
         dbState.error = msg.message
+        break
+      case 'sync':
+        Object.assign(syncState, msg.status)
+        break
+      case 'changed':
+        dbState.version++
         break
       case 'result': {
         const p = pending.get(msg.id)

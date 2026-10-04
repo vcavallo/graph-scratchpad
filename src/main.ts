@@ -6,8 +6,10 @@ import { router } from './router'
 import { startDb } from './db/api'
 import { persistOnFirstRun } from './lib/storage'
 import { trackKeyboard } from './lib/viewport'
+import { startSyncTriggers } from './state/sync'
 
 startDb()
+startSyncTriggers()
 trackKeyboard()
 void persistOnFirstRun()
 

@@ -13,7 +13,7 @@ export default defineConfig({
       manifest: {
         name: 'Graph Scratchpad',
         short_name: 'Scratchpad',
-        description: 'Nested lists that link to each other. Works offline; data stays on this device.',
+        description: 'Nested lists that link to each other. Works offline; syncs with your own server when it can.',
         theme_color: '#f4f7f8',
         background_color: '#f4f7f8',
         display: 'standalone',
@@ -30,6 +30,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,wasm,svg,png,woff2,webmanifest}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',
+        // The sync API is never served from the cache.
+        navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
         // Take control of the page on first install, so a later update's
         // skip-waiting hands control over and the page can reload into it.
