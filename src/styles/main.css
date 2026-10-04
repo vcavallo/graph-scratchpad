@@ -573,6 +573,28 @@ a {
   background: currentColor;
 }
 
+.bullet .num {
+  min-width: 22px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.row.numbered .bullet {
+  width: 28px;
+  justify-items: end;
+  padding-right: 2px;
+}
+
+.bullet.has-hidden .num {
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-decoration-color: var(--grid-major);
+  text-underline-offset: 3px;
+}
+
 .bullet.has-hidden .dot {
   box-shadow: 0 0 0 4px var(--grid-major);
 }
@@ -1357,6 +1379,13 @@ body:has(.edit-toolbar) .toasts {
 
 .gnode.done {
   opacity: 0.55;
+}
+
+.gnode text.num {
+  font-size: 11px;
+  font-weight: 750;
+  stroke: none;
+  fill: var(--ink);
 }
 
 .gnode text {

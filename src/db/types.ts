@@ -17,6 +17,8 @@ export interface RawNode {
   updated_at: number
   deleted_at: number | null
   sort_key: string | null
+  /** 1 when this node's children form a numbered list. */
+  numbered: number
 }
 
 /** A row of `edges` as stored. */
@@ -38,6 +40,7 @@ export interface NodeInfo {
   created_at: number
   updated_at: number
   deleted: boolean
+  numbered: boolean
 }
 
 export interface TreeNode {
@@ -46,6 +49,8 @@ export interface TreeNode {
   text: string
   done: boolean
   collapsed: boolean
+  /** Children are a numbered list. */
+  numbered: boolean
   children: TreeNode[]
 }
 
@@ -140,6 +145,8 @@ export interface GraphEdge {
   src: string
   dst: string
   type: EdgeType
+  /** For child edges under a numbered parent: the child's position (0-based). */
+  index?: number
 }
 
 export interface Neighborhood {

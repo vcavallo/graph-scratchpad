@@ -628,3 +628,38 @@ describe('listBrowse', () => {
     expect(s.listBrowse(other)).toEqual([])
   })
 })
+
+describe('numbered lists', () => {
+  it('stores the flag and reports it in the tree', () => {
+    const { a } = build(pad, ['a', ['a1', 'a2']])
+    expect(s.getTree(pad).children[0].numbered).toBe(false)
+    s.setNumbered(a, true)
+    expect(s.getTree(pad).children[0].numbered).toBe(true)
+    expect(s.getNode(a)?.numbered).toBe(true)
+  })
+
+  it('gives child edges of numbered parents their position in the graph', () => {
+    const { a, a1, a2, a3, gone } = build(pad, ['a', ['a1', 'gone', 'a2', 'a3']])
+    s.deleteSubtree(gone)
+    s.setNumbered(a, true)
+    s.moveUp(a3)
+    const g = s.getNeighborhood(a, 1)
+    const idx = (dst: string) => g.edges.find((e) => e.type === 'child' && e.dst === dst)?.index
+    expect([idx(a1), idx(a3), idx(a2)]).toEqual([0, 1, 2])
+    // Unnumbered parents' edges have no index.
+    expect(g.edges.find((e) => e.dst === a)?.index).toBeUndefined()
+  })
+
+  it('round-trips through export and imports older files without the flag', async () => {
+    const { a } = build(pad, ['a', ['a1']])
+    s.setNumbered(a, true)
+    const file = JSON.parse(JSON.stringify(s.exportAll()))
+    const fresh = await makeStore()
+    fresh.importAll(file)
+    expect(fresh.getNode(a)?.numbered).toBe(true)
+    for (const n of file.nodes) delete n.numbered
+    const old = await makeStore()
+    old.importAll({ ...file, schema_version: 2 })
+    expect(old.getNode(a)?.numbered).toBe(false)
+  })
+})

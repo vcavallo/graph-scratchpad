@@ -56,6 +56,7 @@ Conventions within the model:
 - "Backlinks" for a node = incoming `link` edges, each shown with the source node's breadcrumb path (pad → ancestors → item).
 - Deleting a node soft-deletes it and its subtree. Link chips pointing to a deleted node render as struck-through, not as broken tokens.
 - Migration 2 adds `nodes.sort_key`: a fractional key ordering root nodes (pads), since they have no incoming `child` edge to carry order. NULL for everything else.
+- Migration 3 adds `nodes.numbered`: 1 means this node's children are a numbered (ordered) list. The outline shows 1. 2. 3.; the graph lays them out as a column beside the parent, in order (`GraphEdge.index`).
 - Sibling keys are computed against *all* children, including soft-deleted ones, so keys stay unique and restored nodes return to their old position.
 - Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
 - `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once).

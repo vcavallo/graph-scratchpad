@@ -38,6 +38,7 @@ const PATHS: Record<string, string> = {
   shield: 'M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3z',
   trashcan: 'M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7',
   fit: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+  numbered: 'M10 6h10M10 12h10M10 18h10M4 4.5h1.5V9M4 9h3M4 14.5c0-.8.7-1.5 1.5-1.5S7 13.7 7 14.5c0 1.2-3 2-3 4h3',
 }
 
 const props = withDefaults(defineProps<{ name: string; size?: number; stroke?: number }>(), { size: 22, stroke: 2 })

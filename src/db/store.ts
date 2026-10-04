@@ -50,7 +50,7 @@ interface SiblingRow {
   sort_key: string | null
 }
 
-const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key'
+const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered'
 const MAX_LABEL_DEPTH = 3
 
 export class StoreError extends Error {
@@ -73,6 +73,7 @@ function toInfo(r: RawNode): NodeInfo {
     created_at: r.created_at,
     updated_at: r.updated_at,
     deleted: r.deleted_at !== null,
+    numbered: !!r.numbered,
   }
 }
 
@@ -197,8 +198,8 @@ export class Store {
     const id = wantedId ?? this.#uuid()
     const t = this.#now()
     this.db.exec(
-      `INSERT INTO nodes (id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key)
-       VALUES (?, ?, ?, 0, 0, ?, ?, NULL, ?)`,
+      `INSERT INTO nodes (id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered)
+       VALUES (?, ?, ?, 0, 0, ?, ?, NULL, ?, 0)`,
       [id, kind, text, t, t, sortKey],
     )
     if (text) this.#reconcileLinks(id, text)
@@ -428,6 +429,12 @@ export class Store {
   setDone(id: string, done: boolean): void {
     this.#requireLive(id)
     this.db.exec('UPDATE nodes SET done = ?, updated_at = ? WHERE id = ?', [done ? 1 : 0, this.#now(), id])
+  }
+
+  /** Show this node's children as a numbered list (true) or bullets (false). */
+  setNumbered(id: string, numbered: boolean): void {
+    this.#requireLive(id)
+    this.db.exec('UPDATE nodes SET numbered = ?, updated_at = ? WHERE id = ?', [numbered ? 1 : 0, this.#now(), id])
   }
 
   setCollapsed(id: string, collapsed: boolean): void {
@@ -708,7 +715,7 @@ export class Store {
          WHERE e.type = 'child' AND c.deleted_at IS NULL
        )
        SELECT n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key,
-              pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id
+              n.numbered, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id
        FROM sub JOIN nodes n ON n.id = sub.id
        LEFT JOIN edges pe ON pe.dst = n.id AND pe.type = 'child'`,
       [rootId],
@@ -721,6 +728,7 @@ export class Store {
         text: r.text,
         done: !!r.done,
         collapsed: !!r.collapsed,
+        numbered: !!r.numbered,
         children: [],
         _key: r.edge_key ?? '',
         _edge: r.edge_id ?? '',
@@ -736,7 +744,15 @@ export class Store {
       const kids = (t.children as (TreeNode & { _key: string; _edge: string })[]).sort((a, b) =>
         compareKeys({ sort_key: a._key, edge_id: a._edge }, { sort_key: b._key, edge_id: b._edge }),
       )
-      return { id: t.id, kind: t.kind, text: t.text, done: t.done, collapsed: t.collapsed, children: kids.map(strip) }
+      return {
+        id: t.id,
+        kind: t.kind,
+        text: t.text,
+        done: t.done,
+        collapsed: t.collapsed,
+        numbered: t.numbered,
+        children: kids.map(strip),
+      }
     }
     return strip(root)
   }
@@ -990,6 +1006,19 @@ export class Store {
          AND src IN (SELECT value FROM json_each(?1)) AND dst IN (SELECT value FROM json_each(?1))`,
       [JSON.stringify(ids)],
     )
+    // Children of numbered lists carry their position, so the graph can lay them out in order.
+    const numbered = new Set(
+      this.db
+        .all<{ id: string }>(`SELECT id FROM nodes WHERE numbered = 1 AND id IN (SELECT value FROM json_each(?))`, [
+          JSON.stringify(ids),
+        ])
+        .map((r) => r.id),
+    )
+    const order = new Map<string, number>()
+    for (const parent of numbered) this.#liveChildIds(parent).forEach((c, i) => order.set(c, i))
+    for (const e of edges) {
+      if (e.type === 'child' && numbered.has(e.src) && order.has(e.dst)) e.index = order.get(e.dst)
+    }
     const refs = this.getRefs(ids)
     const nodes: GraphNode[] = ids.map((n) => ({
       id: n,
@@ -1068,8 +1097,8 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       for (const n of file.nodes) {
         this.db.exec(
-          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key],
+          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key, n.numbered],
         )
       }
       for (const e of file.edges) {
@@ -1130,6 +1159,7 @@ export function validateExport(data: unknown): ExportFile {
       updated_at: isNum(n.updated_at) ? n.updated_at : created,
       deleted_at: isNum(n.deleted_at) ? n.deleted_at : null,
       sort_key: isStr(n.sort_key) ? n.sort_key : null,
+      numbered: n.numbered ? 1 : 0,
     })
   }
 

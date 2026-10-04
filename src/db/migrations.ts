@@ -43,6 +43,11 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
       CREATE INDEX nodes_kind ON nodes(kind, deleted_at);
     `,
   },
+  {
+    // 1 = this node's children are a numbered (ordered) list, not bullets.
+    version: 3,
+    sql: `ALTER TABLE nodes ADD COLUMN numbered INTEGER NOT NULL DEFAULT 0;`,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

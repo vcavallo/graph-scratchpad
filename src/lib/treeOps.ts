@@ -24,7 +24,7 @@ export function locate(root: TreeNode, id: string): Located | null {
 }
 
 export function newNode(id: string, text = '', kind: Kind = 'item'): TreeNode {
-  return { id, kind, text, done: false, collapsed: false, children: [] }
+  return { id, kind, text, done: false, collapsed: false, numbered: false, children: [] }
 }
 
 export function insertSibling(root: TreeNode, siblingId: string, where: 'before' | 'after', node: TreeNode): boolean {
@@ -93,6 +93,10 @@ export interface FlatRow {
   parentId: string
   isLast: boolean
   hasChildren: boolean
+  /** Position among its siblings (0-based). */
+  index: number
+  /** The parent's children are a numbered list. */
+  numbered: boolean
 }
 
 /** Visible rows in document order (children of collapsed nodes skipped). */
@@ -106,6 +110,8 @@ export function flatten(root: TreeNode): FlatRow[] {
         parentId: parent.id,
         isLast: i === parent.children.length - 1,
         hasChildren: c.children.length > 0,
+        index: i,
+        numbered: parent.numbered,
       })
       if (!c.collapsed) walk(c, depth + 1)
     })

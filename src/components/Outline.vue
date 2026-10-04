@@ -296,6 +296,11 @@ function moveTo(row: T.FlatRow) {
   })
 }
 
+function setNumbered(n: TreeNode, numbered: boolean) {
+  n.numbered = numbered
+  sync(api.setNumbered(n.id, numbered))
+}
+
 function setKind(row: T.FlatRow, kind: Kind) {
   row.node.kind = kind
   sync(api.setKind(row.node.id, kind))
@@ -337,11 +342,18 @@ function openMore(row: T.FlatRow) {
     { label: 'Move to…', icon: 'move', run: () => moveTo(row) },
   ]
   if (row.hasChildren) {
-    actions.push({
-      label: n.collapsed ? 'Expand' : 'Collapse',
-      icon: 'collapse',
-      run: () => setCollapsed(row, !n.collapsed),
-    })
+    actions.push(
+      {
+        label: n.collapsed ? 'Expand' : 'Collapse',
+        icon: 'collapse',
+        run: () => setCollapsed(row, !n.collapsed),
+      },
+      {
+        label: n.numbered ? 'Use bullets for the items inside' : 'Number the items inside',
+        icon: n.numbered ? 'list' : 'numbered',
+        run: () => setNumbered(n, !n.numbered),
+      },
+    )
   }
   if (n.kind === 'item') {
     actions.push(

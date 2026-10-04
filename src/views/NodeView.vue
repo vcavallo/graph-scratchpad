@@ -183,6 +183,12 @@ function openMenu() {
   } else {
     actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })
   }
+  const n = node.value
+  actions.push({
+    label: n.numbered ? 'Use bullets for this list' : 'Number this list',
+    icon: n.numbered ? 'list' : 'numbered',
+    run: () => void api.setNumbered(props.id, !n.numbered).catch(reportError),
+  })
   actions.push({ label: kind.value === 'pad' ? 'Delete pad' : 'Delete', icon: 'trash', danger: true, run: () => void remove() })
   openSheet({ title: titleLabel.value, actions })
 }

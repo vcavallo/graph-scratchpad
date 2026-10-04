@@ -27,7 +27,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
 <template>
   <div
     class="row"
-    :class="{ active, done: node.done, [`kind-${node.kind}`]: true }"
+    :class="{ active, done: node.done, numbered: row.numbered, [`kind-${node.kind}`]: true }"
     :style="{ '--depth': row.depth }"
     :data-id="node.id"
   >
@@ -50,7 +50,8 @@ const saveText = (t: string) => props.save(node.value.id, t)
       aria-label="Open item"
       @mousedown.prevent
     >
-      <KindIcon v-if="node.kind === 'place' || node.kind === 'person'" :kind="node.kind" :size="16" />
+      <span v-if="row.numbered" class="num">{{ row.index + 1 }}.</span>
+      <KindIcon v-else-if="node.kind === 'place' || node.kind === 'person'" :kind="node.kind" :size="16" />
       <span v-else class="dot" />
     </RouterLink>
     <button
