@@ -531,3 +531,26 @@ describe('inbox and seed', () => {
     expect(fresh.seedIfEmpty()).toBeNull()
   })
 })
+
+describe('malformed sort keys from imports', () => {
+  it('re-keys children with invalid fractional keys instead of failing', () => {
+    const { a, b, c } = build(pad, ['a', 'b', 'c'])
+    s.db.exec(`UPDATE edges SET sort_key = 'a0200' WHERE dst = ?`, [a])
+    s.db.exec(`UPDATE edges SET sort_key = 'a0300' WHERE dst = ?`, [b])
+    s.db.exec(`UPDATE edges SET sort_key = 'a0400' WHERE dst = ?`, [c])
+    s.createSibling(b, 'after', { text: 'b2' })
+    expect(shape(s, pad)).toEqual(['a', 'b', 'b2', 'c'])
+    expect(s.moveUp(c)).toBe(true)
+    expect(shape(s, pad)).toEqual(['a', 'b', 'c', 'b2'])
+  })
+
+  it('re-keys pads with invalid keys', () => {
+    const other = s.createPad('Other')
+    s.db.exec(`UPDATE nodes SET sort_key = 'a0100' WHERE id = ?`, [pad])
+    s.db.exec(`UPDATE nodes SET sort_key = 'a0900' WHERE id = ?`, [other])
+    s.createPad('Third')
+    expect(s.listPads().map((p) => p.label)).toEqual(['Project', 'Other', 'Third'])
+    s.reorderPad(other, null)
+    expect(s.listPads().map((p) => p.label)).toEqual(['Other', 'Project', 'Third'])
+  })
+})

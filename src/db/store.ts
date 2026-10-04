@@ -173,13 +173,18 @@ export class Store {
         hi = sibs[i].sort_key
       }
     }
-    if ((lo !== null && hi !== null && lo >= hi) || (sibs.some((s) => s.sort_key === null) && !retried)) {
-      // Duplicate or missing keys (e.g. from an import). Normalise and retry.
-      if (retried) throw new StoreError('Could not compute a sort key', 'sort_key')
-      this.#rekey(parentId)
-      return this.#keyAt(parentId, pos, excludeId, true)
+    const broken = (lo !== null && hi !== null && lo >= hi) || sibs.some((s) => s.sort_key === null)
+    if (!broken) {
+      try {
+        return generateKeyBetween(lo, hi)
+      } catch {
+        // A malformed key (e.g. from a hand-edited import); fall through.
+      }
     }
-    return generateKeyBetween(lo, hi)
+    // Duplicate, missing or malformed keys. Normalise the siblings and retry.
+    if (retried) throw new StoreError('Could not compute a sort key', 'sort_key')
+    this.#rekey(parentId)
+    return this.#keyAt(parentId, pos, excludeId, true)
   }
 
   #insertNode(kind: Kind, text: string, sortKey: string | null = null, wantedId?: string): string {
@@ -258,8 +263,13 @@ export class Store {
   }
 
   #rootKeyAfterLast(): string {
-    const row = this.db.get<{ k: string | null }>(`SELECT max(sort_key) AS k FROM nodes WHERE sort_key IS NOT NULL`)
-    return generateKeyBetween(row?.k ?? null, null)
+    const last = () => this.db.get<{ k: string | null }>(`SELECT max(sort_key) AS k FROM nodes WHERE sort_key IS NOT NULL`)?.k ?? null
+    try {
+      return generateKeyBetween(last(), null)
+    } catch {
+      this.#rekeyRoots()
+      return generateKeyBetween(last(), null)
+    }
   }
 
   /**
@@ -550,7 +560,7 @@ export class Store {
   }
 
   /** Reorder pads: put padId right after afterPadId (null → first). */
-  reorderPad(padId: string, afterPadId: string | null): boolean {
+  reorderPad(padId: string, afterPadId: string | null, retried = false): boolean {
     return this.db.tx(() => {
       const n = this.#requireLive(padId)
       if (n.kind !== 'pad') throw new StoreError('Not a pad', 'not_pad')
@@ -567,17 +577,29 @@ export class Store {
         lo = roots[i].sort_key
         hi = roots[i + 1]?.sort_key ?? null
       }
-      if (lo !== null && hi !== null && lo >= hi) {
-        const keys = generateNKeysBetween(null, null, roots.length)
-        roots.forEach((r, i) => {
-          r.sort_key = keys[i]
-          this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [keys[i], r.id])
-        })
-        return this.reorderPad(padId, afterPadId)
+      let key: string | null = null
+      if (lo === null || hi === null || lo < hi) {
+        try {
+          key = generateKeyBetween(lo, hi)
+        } catch {
+          // Malformed key from an import; re-key below.
+        }
       }
-      this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [generateKeyBetween(lo, hi), padId])
+      if (key === null) {
+        if (retried) throw new StoreError('Could not compute a sort key', 'sort_key')
+        this.#rekeyRoots()
+        return this.reorderPad(padId, afterPadId, true)
+      }
+      this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [key, padId])
       return true
     })
+  }
+
+  /** Give every root node with a sort key a fresh, valid one, keeping order. */
+  #rekeyRoots(): void {
+    const roots = this.db.all<{ id: string }>(`SELECT id FROM nodes WHERE sort_key IS NOT NULL ORDER BY sort_key, id`)
+    const keys = generateNKeysBetween(null, null, roots.length)
+    roots.forEach((r, i) => this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [keys[i], r.id]))
   }
 
   /** The pad that new items created from the link picker are filed under. */

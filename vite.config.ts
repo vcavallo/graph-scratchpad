@@ -31,6 +31,9 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
+        // Take control of the page on first install, so a later update's
+        // skip-waiting hands control over and the page can reload into it.
+        clientsClaim: true,
       },
     }),
   ],

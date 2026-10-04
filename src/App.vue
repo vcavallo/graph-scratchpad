@@ -21,6 +21,12 @@ const { needRefresh, updateServiceWorker } = useRegisterSW({
   },
 })
 
+function applyUpdate() {
+  void updateServiceWorker(true)
+  // If the new worker never takes control (e.g. the page wasn't controlled), reload anyway.
+  setTimeout(() => window.location.reload(), 3000)
+}
+
 const chromeHidden = computed(() => !!editing.key || !!pickerState.value)
 
 // Android's back button navigates; don't leave an overlay over the next page.
@@ -42,7 +48,7 @@ watch(
     </div>
     <div v-if="needRefresh" class="banner banner-update">
       <span>A new version is ready.</span>
-      <button type="button" class="btn btn-small btn-primary" @click="updateServiceWorker(true)">Reload</button>
+      <button type="button" class="btn btn-small btn-primary" @click="applyUpdate">Reload</button>
     </div>
 
     <main class="main">
