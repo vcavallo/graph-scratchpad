@@ -8,6 +8,7 @@ import { useLoader } from '@/composables/useLoader'
 import { confirmDialog, reportError, toast } from '@/state/ui'
 import { prefs } from '@/state/prefs'
 import { lastBackup, recordBackup, requestPersistence, storageStatus } from '@/lib/storage'
+import { installState, promptInstall } from '@/lib/install'
 
 const router = useRouter()
 const { data: info } = useLoader<DbInfo>(() => api.dbInfo())
@@ -55,6 +56,11 @@ async function toggleSync() {
   const on = !syncState.enabled
   const s = await api.syncEnable(on).catch(reportError)
   if (s) toast(on ? `Sync is on with ${s.server || 'the server'}` : 'Sync is off. Lists on this device stay here.')
+}
+
+async function install() {
+  const ok = await promptInstall()
+  if (ok) toast('Installed. Open it from the home screen icon.')
 }
 
 const buildTime = new Date(__BUILD_TIME__).toLocaleString()
@@ -190,6 +196,25 @@ async function askPersist() {
       <button v-if="storageStatus.persisted === false" type="button" class="btn" @click="askPersist">
         <Icon name="shield" :size="18" /> Ask to keep data
       </button>
+    </section>
+
+    <section class="card app-card">
+      <h2 class="section-title">App</h2>
+      <p v-if="installState.standalone" class="note">Running as an installed app, in its own window.</p>
+      <template v-else>
+        <p class="note">
+          Running in a browser tab.
+          <template v-if="installState.installed">It’s installed now: open it from the home screen icon.</template>
+          <template v-else-if="installState.canInstall">Install it to open it from the home screen in its own window, without the address bar.</template>
+          <template v-else>
+            To open it in its own window: if the home screen icon opens a tab, it’s a bookmark shortcut. Remove it, then
+            use <strong>Install app</strong> in the browser’s menu (not a shortcut).
+          </template>
+        </p>
+        <div v-if="installState.canInstall" class="btn-row">
+          <button type="button" class="btn btn-primary" @click="install"><Icon name="download" :size="18" /> Install app</button>
+        </div>
+      </template>
     </section>
 
     <section class="card sync-card">

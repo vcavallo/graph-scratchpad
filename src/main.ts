@@ -7,9 +7,11 @@ import { startDb } from './db/api'
 import { persistOnFirstRun } from './lib/storage'
 import { trackKeyboard } from './lib/viewport'
 import { startSyncTriggers } from './state/sync'
+import { trackInstall } from './lib/install'
 
 startDb()
 startSyncTriggers()
+trackInstall()
 trackKeyboard()
 void persistOnFirstRun()
 

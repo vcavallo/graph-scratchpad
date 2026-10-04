@@ -103,6 +103,7 @@ try {
   await b.goto(BASE + '/#/settings')
   await until(async () => (await b.innerText('.sync-card')).includes('Can’t reach the server'), 'B says it can’t reach the server')
   await shot(b, 'sync-offline')
+  assert((await b.innerText('.app-card')).includes('Running in a browser tab'), 'Settings says it is running in a tab')
 
   // Back up: everything merges, on both.
   startServer()
