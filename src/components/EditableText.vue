@@ -20,6 +20,7 @@ import {
 import { registerEditor, unregisterEditor, noteBlur, noteFocus, type EditorHandle } from '@/state/focus'
 import { refCache, refsVersion } from '@/state/refs'
 import { reportError } from '@/state/ui'
+import { ApiError } from '@/db/api'
 
 const props = withDefaults(
   defineProps<{
@@ -82,7 +83,8 @@ async function flush(): Promise<void> {
   try {
     await props.save(t)
   } catch (e) {
-    reportError(e)
+    // The node was deleted under us (e.g. its row was just removed): nothing to save.
+    if (!(e instanceof ApiError && (e.code === 'deleted' || e.code === 'not_found'))) reportError(e)
   } finally {
     inFlight--
   }
@@ -160,6 +162,7 @@ function onInput(e: Event) {
   updateEmpty()
   schedule()
   if (!ie.isComposing && (ie.inputType ?? 'insertText').startsWith('insert')) checkAt()
+  else lastAt = -1
 }
 
 function onCompositionStart() {
@@ -310,6 +313,7 @@ const handle: EditorHandle = {
   focus(at: CaretTarget = 'end') {
     const e = el.value
     if (!e) return
+    lastAt = -1
     if (document.activeElement !== e) e.focus({ preventScroll: true })
     setCaret(e, at)
     revealSoon()
@@ -319,6 +323,7 @@ const handle: EditorHandle = {
   },
   text: current,
   replace(text, opts = {}) {
+    lastAt = -1
     if (timer) {
       clearTimeout(timer)
       timer = undefined
@@ -329,6 +334,13 @@ const handle: EditorHandle = {
     if (!opts.saved) schedule()
   },
   flush,
+  discard() {
+    if (timer) {
+      clearTimeout(timer)
+      timer = undefined
+    }
+    committed = current()
+  },
   isFocused: () => focused && document.activeElement === el.value,
   insertText,
 }

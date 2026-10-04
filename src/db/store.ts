@@ -357,6 +357,28 @@ export class Store {
   }
 
   /**
+   * Insert several new nodes in order, in one transaction: after an existing
+   * sibling, or as the first/last children of a parent. Returns their ids.
+   */
+  insertMany(
+    anchor: { after: string } | { parent: string; position: 'first' | 'last' },
+    items: NodeInit[],
+  ): string[] {
+    return this.db.tx(() => {
+      const ids: string[] = []
+      for (const init of items) {
+        const prev = ids[ids.length - 1]
+        let id: string
+        if (prev) id = this.createSibling(prev, 'after', init)
+        else if ('after' in anchor) id = this.createSibling(anchor.after, 'after', init)
+        else id = this.createChild(anchor.parent, anchor.position === 'first' ? null : undefined, init)
+        ids.push(id)
+      }
+      return ids
+    })
+  }
+
+  /**
    * Split an item at the caret: it keeps `before` (and its children), and a new
    * sibling right after it gets `after`.
    */

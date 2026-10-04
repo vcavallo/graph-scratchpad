@@ -237,6 +237,7 @@ onMounted(async () => {
             @enter="onTitleEnter"
             @arrow="onTitleArrow"
             @at-trigger="(o) => openLinkPicker(titleKey, o, true, id)"
+            @paste-lines="(lines) => outline?.addLines(lines)"
             @chip="(cid) => router.push(`/n/${cid}`)"
           />
         </div>

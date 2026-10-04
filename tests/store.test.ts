@@ -554,3 +554,25 @@ describe('malformed sort keys from imports', () => {
     expect(s.listPads().map((p) => p.label)).toEqual(['Other', 'Project', 'Third'])
   })
 })
+
+describe('insertMany', () => {
+  it('inserts several lines after a sibling, in order', () => {
+    const { a } = build(pad, ['a', 'z'])
+    const ids = s.insertMany({ after: a }, [{ text: 'b' }, { text: 'c' }, { text: 'd' }])
+    expect(ids).toHaveLength(3)
+    expect(shape(s, pad)).toEqual(['a', 'b', 'c', 'd', 'z'])
+  })
+
+  it('inserts as first or last children', () => {
+    build(pad, ['m'])
+    s.insertMany({ parent: pad, position: 'first' }, [{ text: 'a' }, { text: 'b' }])
+    s.insertMany({ parent: pad, position: 'last' }, [{ text: 'y' }, { text: 'z' }])
+    expect(shape(s, pad)).toEqual(['a', 'b', 'm', 'y', 'z'])
+  })
+
+  it('is all-or-nothing', () => {
+    const { a } = build(pad, ['a'])
+    expect(() => s.insertMany({ after: a }, [{ text: 'ok' }, { id: 'bad', text: 'x' }])).toThrow()
+    expect(shape(s, pad)).toEqual(['a'])
+  })
+})

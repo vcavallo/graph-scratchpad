@@ -77,6 +77,12 @@ function refocus(id: string, at: CaretTarget) {
   })
 }
 
+/** Remove a row from the local tree; its editor must not save on unmount. */
+function removeLocal(id: string) {
+  getEditor(key(id))?.discard()
+  T.remove(local.value, id)
+}
+
 function labelOf(n: TreeNode): string {
   const l = labelize(n.text, (id) => refCache[id]?.label).trim()
   return l.length > 40 ? l.slice(0, 39) + '…' : l || 'Untitled'
@@ -122,14 +128,16 @@ function onEnter(row: T.FlatRow, { before, after }: { before: string; after: str
   }
 }
 
+const merging = new Set<string>()
+
 async function onBackspaceStart(row: T.FlatRow, { empty }: { empty: boolean }) {
   const id = row.node.id
   const i = rows.value.findIndex((r) => r.node.id === id)
   const prev = rows.value[i - 1]
   const next = rows.value[i + 1]
-  if (row.hasChildren) return
+  if (row.hasChildren || merging.has(id)) return
   if (empty) {
-    T.remove(local.value, id)
+    removeLocal(id)
     sync(api.deleteSubtree(id))
     if (prev) focusRow(prev.node.id, 'end')
     else if (next) focusRow(next.node.id, 'start')
@@ -141,16 +149,18 @@ async function onBackspaceStart(row: T.FlatRow, { empty }: { empty: boolean }) {
   const prevEd = getEditor(key(prev.node.id))
   const text = ed?.text() ?? row.node.text
   const prevText = prevEd?.text() ?? prev.node.text
-  await ed?.flush()
-  await prevEd?.flush()
+  // Key repeat can deliver a second Backspace before the merge lands.
+  merging.add(id)
   try {
+    await ed?.flush()
+    await prevEd?.flush()
     const ok = await api.mergeInto(id, prev.node.id)
     if (!ok) {
       toast('Can’t merge: other items link to this one')
       return
     }
     prev.node.text = prevText + text
-    T.remove(local.value, id)
+    removeLocal(id)
     await nextTick()
     const pe = getEditor(key(prev.node.id))
     pe?.replace(prevText + text, { saved: true })
@@ -158,6 +168,7 @@ async function onBackspaceStart(row: T.FlatRow, { empty }: { empty: boolean }) {
   } catch (e) {
     reportError(e)
   } finally {
+    merging.delete(id)
     void props.reload()
   }
 }
@@ -224,21 +235,14 @@ function onShortcut(row: T.FlatRow, name: Shortcut) {
 }
 
 function onPasteLines(row: T.FlatRow, lines: string[]) {
+  void getEditor(key(row.node.id))?.flush()
+  const items = lines.map((text) => ({ id: crypto.randomUUID(), text }))
   let after = row.node.id
-  const ids: string[] = []
-  void getEditor(key(after))?.flush()
-  const send = async () => {
-    for (const [i, text] of lines.entries()) {
-      await api.createSibling(i === 0 ? row.node.id : ids[i - 1], 'after', { id: ids[i], text })
-    }
+  for (const it of items) {
+    T.insertSibling(local.value, after, 'after', T.newNode(it.id, it.text))
+    after = it.id
   }
-  for (const text of lines) {
-    const nid = crypto.randomUUID()
-    T.insertSibling(local.value, after, 'after', T.newNode(nid, text))
-    ids.push(nid)
-    after = nid
-  }
-  sync(send())
+  sync(api.insertMany({ after: row.node.id }, items))
   focusRow(after, 'end')
 }
 
@@ -249,7 +253,7 @@ function deleteRow(id: string) {
   const label = labelOf(row.node)
   const prev = rows.value[i - 1]
   const nextRow = rows.value.slice(i + 1).find((r) => r.depth <= row.depth)
-  T.remove(local.value, id)
+  removeLocal(id)
   api
     .deleteSubtree(id)
     .then(({ count }) => {
@@ -279,7 +283,7 @@ function moveTo(row: T.FlatRow) {
       api
         .moveSubtree(id, r.id)
         .then(() => {
-          T.remove(local.value, id)
+          removeLocal(id)
           toast(`Moved to “${r.label}”`, {
             action: oldParent
               ? { label: 'Undo', run: () => sync(api.moveSubtree(id, oldParent, oldPrev)) }
@@ -348,6 +352,18 @@ function addChild(position: 'first' | 'last') {
   focusRow(nid, 'start')
 }
 
+/** Lines pasted into the title become the first items, in order. */
+function addLines(lines: string[]) {
+  const items = lines.map((text) => ({ id: crypto.randomUUID(), text }))
+  items.forEach((it, i) => {
+    const node = T.newNode(it.id, it.text)
+    if (i === 0) T.insertChild(local.value, local.value.id, 'first', node)
+    else T.insertSibling(local.value, items[i - 1].id, 'after', node)
+  })
+  sync(api.insertMany({ parent: local.value.id, position: 'first' }, items))
+  if (items.length) focusRow(items[items.length - 1].id, 'end')
+}
+
 function focusFirst(): boolean {
   const first = rows.value[0]
   if (!first) return false
@@ -355,7 +371,7 @@ function focusFirst(): boolean {
   return true
 }
 
-defineExpose({ addChild, focusFirst })
+defineExpose({ addChild, addLines, focusFirst })
 </script>
 
 <template>

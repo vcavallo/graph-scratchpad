@@ -34,6 +34,8 @@ export const dbState = reactive({
   version: 0,
   /** Bumped when a write is sent; lets views drop reads that raced a write. */
   writesSent: 0,
+  /** Writes sent but not yet answered. */
+  writesPending: 0,
 })
 
 const READ_PREFIXES = ['get', 'list', 'search', 'info', 'export', 'dbInfo']
@@ -84,9 +86,17 @@ function ensureWorker(): Worker {
 function call(method: string, args: unknown[]): Promise<unknown> {
   const w = ensureWorker()
   const id = ++seq
-  if (!isRead(method)) dbState.writesSent++
+  const write = !isRead(method)
+  if (write) {
+    dbState.writesSent++
+    dbState.writesPending++
+  }
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
+    const settle = <T>(fn: (v: T) => void) => (v: T) => {
+      if (write) dbState.writesPending--
+      fn(v)
+    }
+    pending.set(id, { resolve: settle(resolve), reject: settle(reject) })
     // Vue reactive proxies can't be structured-cloned; send plain copies.
     w.postMessage({ id, method, args: args.map(toPlain) })
   })

@@ -11,6 +11,8 @@ export interface EditorHandle {
   /** Replace the content. `saved: true` means the database already has it. */
   replace(text: string, opts?: { saved?: boolean; caret?: CaretTarget }): void
   flush(): Promise<void>
+  /** Drop any unsaved edit (the node is being removed). */
+  discard(): void
   isFocused(): boolean
   insertText(s: string): void
 }
