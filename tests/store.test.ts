@@ -610,3 +610,21 @@ describe('convertToHub', () => {
     expect(() => s.convertToHub(pad, 'place')).toThrow(/pad/)
   })
 })
+
+describe('listBrowse', () => {
+  it('lists pads at the top level and live children below, with counts', () => {
+    const other = s.createPad('Other')
+    const { a, gone } = build(pad, ['a', ['a1', 'a2'], 'gone', 'b'])
+    s.deleteSubtree(gone)
+    expect(s.listBrowse(null).map((r) => [r.label, r.childCount])).toEqual([
+      ['Project', 2],
+      ['Other', 0],
+    ])
+    expect(s.listBrowse(pad).map((r) => [r.label, r.childCount])).toEqual([
+      ['a', 2],
+      ['b', 0],
+    ])
+    expect(s.listBrowse(a).map((r) => r.label)).toEqual(['a1', 'a2'])
+    expect(s.listBrowse(other)).toEqual([])
+  })
+})

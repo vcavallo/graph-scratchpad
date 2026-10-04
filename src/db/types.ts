@@ -112,6 +112,16 @@ export interface SearchResult {
   score: number
 }
 
+/** A row in the move browser. */
+export interface BrowseRow {
+  id: string
+  kind: Kind
+  label: string
+  done: boolean
+  /** Live children (how much is inside). */
+  childCount: number
+}
+
 export interface SearchOptions {
   limit?: number
   kinds?: Kind[]

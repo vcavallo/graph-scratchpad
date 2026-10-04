@@ -10,10 +10,11 @@ See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for miles
 - **Backspace** on an empty line deletes it. At the start of a line, it merges the line into the one above, unless other items link to it or it has children.
 - The **bar above the keyboard** has outdent, indent, move up, move down, insert link, more (open, move to another pad, turn into a place or person, collapse, delete), and hide keyboard.
 - **Turn into a place / person** creates a standalone place (or person) named after the line, and leaves the line in your list as a link to it. On a hardware keyboard: Tab / Shift-Tab, Alt-Shift-↑/↓ to move, Ctrl-Enter to check off, Ctrl-↑/↓ to collapse or expand.
+- **Move to…** (in the ⋯ menu) opens a browser next to the line: tap a pad or item to look inside it, then **Move into “…”**. Search works too.
 - **Type `@`** at the start of a word, or tap the @ button, to search all items, places, and people. You can also create a new place, person, or item from the same search. New items go into an "Inbox" pad.
 - **Tap a chip** to open what it links to. **Tap a bullet** to open that item, with its children, outgoing links, and backlinks.
 - **Places / People** tabs list every place and person with their open-item counts. Check items off right from a place's backlinks.
-- **Graph** (the node icon at the top right of any item) shows its neighborhood 1–3 steps out. Solid lines are nesting and dashed arrows are links.
+- **Graph** (the node icon at the top right of any item) shows its neighborhood 1–3 steps out. Solid lines are nesting and dashed arrows are links. Drag nodes around; tap one to make it the focus (back steps to the previous one); **Open** on the card goes to its page.
 - **Settings** shows whether storage is persistent and lets you export or import a JSON backup. **Trash** lets you restore deleted items.
 - Pasting several lines creates one item per line, with `-`, `*`, and `[ ]` markers stripped.
 

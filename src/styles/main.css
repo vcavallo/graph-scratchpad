@@ -992,6 +992,61 @@ a {
   text-overflow: ellipsis;
 }
 
+.picker-trail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 12px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.picker-trail button {
+  flex: none;
+  max-width: 14em;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.picker-trail button.on {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.picker-trail .sep {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.picker-here {
+  justify-content: flex-start;
+  margin: 0 12px 8px;
+  min-width: 0;
+}
+
+.picker-here-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.picker-count {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.picker-item.excluded {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .picker-empty {
   padding: 16px;
   color: var(--ink-soft);
@@ -1184,13 +1239,67 @@ body:has(.edit-toolbar) .toasts {
   max-width: none;
 }
 
+.graph-wrap {
+  position: relative;
+  margin: 0 -16px;
+}
+
 .graph {
   display: block;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
+  width: 100%;
   height: calc(100dvh - var(--topbar-h) - var(--nav-h) - var(--safe-b) - 44px);
   touch-action: none;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.graph-fit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+}
+
+.focus-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 10px 10px 10px 14px;
+  border-radius: 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow);
+}
+
+.focus-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.focus-label {
+  font-weight: 750;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.focus-meta {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.legend-hint {
+  margin-left: auto;
 }
 
 .edge-child {
@@ -1210,6 +1319,11 @@ body:has(.edit-toolbar) .toasts {
 
 .gnode {
   cursor: pointer;
+  touch-action: none;
+}
+
+.gnode .disc {
+  transition: r 200ms ease;
 }
 
 .gnode .hit {

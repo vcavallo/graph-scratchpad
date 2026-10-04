@@ -129,8 +129,11 @@ const lcount = await page.$$eval('.edge-link', (g) => g.length)
 assert(gcount > 5 && lcount >= 2, `graph renders ${gcount} nodes, ${lcount} link edges`)
 await shot(page, 'graph')
 await page.tap('.gnode.kind-place')
+await sleep(600)
+assert(page.url().includes('focus='), 'tapping a graph node focuses it')
+await page.tap('.focus-card button:has-text("Open")')
 await page.waitForSelector('.backlinks')
-assert(page.url().includes('/n/'), 'tapping a graph node opens it')
+assert(page.url().includes('/n/') && !page.url().includes('graph'), 'Open goes to the node page')
 
 // Export, then import into a fresh install.
 await page.goto(BASE + '/#/settings')

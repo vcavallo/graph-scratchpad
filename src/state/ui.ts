@@ -83,6 +83,8 @@ export interface PickerRequest {
   excludeIds?: string[]
   /** Kinds to suggest when the query is empty. */
   emptyKinds?: Kind[]
+  /** Move mode: start browsing among this node's siblings. */
+  startNear?: string
   allowCreate?: boolean
   onPick: (r: PickResult) => void
   onCancel?: () => void

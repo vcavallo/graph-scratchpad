@@ -18,6 +18,7 @@ import {
   type NodeInfo,
   type NodeViewData,
   type PadSummary,
+  type BrowseRow,
   type RawEdge,
   type RawNode,
   type RefInfo,
@@ -853,6 +854,35 @@ export class Store {
       itemCount: byPad.get(p.id)?.items ?? 0,
       openCount: byPad.get(p.id)?.open ?? 0,
       updated_at: p.updated_at,
+    }))
+  }
+
+  /** Rows for the move browser: the pads (parentId null) or a node's live children, in order. */
+  listBrowse(parentId: string | null): BrowseRow[] {
+    const ids =
+      parentId === null
+        ? this.db
+            .all<{ id: string }>(`SELECT id FROM nodes WHERE kind = 'pad' AND deleted_at IS NULL ORDER BY sort_key, id`)
+            .map((r) => r.id)
+        : this.#liveChildIds(parentId)
+    if (ids.length === 0) return []
+    const counts = new Map(
+      this.db
+        .all<{ src: string; c: number }>(
+          `SELECT e.src AS src, count(*) AS c FROM edges e JOIN nodes n ON n.id = e.dst
+           WHERE e.type = 'child' AND n.deleted_at IS NULL AND e.src IN (SELECT value FROM json_each(?))
+           GROUP BY e.src`,
+          [JSON.stringify(ids)],
+        )
+        .map((r) => [r.src, r.c]),
+    )
+    const refs = this.getRefs(ids)
+    return ids.map((id) => ({
+      id,
+      kind: refs[id].kind,
+      label: refs[id].label,
+      done: refs[id].done,
+      childCount: counts.get(id) ?? 0,
     }))
   }
 

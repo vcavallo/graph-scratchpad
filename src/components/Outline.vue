@@ -276,9 +276,9 @@ function moveTo(row: T.FlatRow) {
   openPicker({
     mode: 'move',
     title: `Move “${labelOf(row.node)}” to`,
-    placeholder: 'Search pads and items',
+    placeholder: 'Search, or browse below',
     excludeIds: T.subtreeIds(row.node),
-    emptyKinds: ['pad'],
+    startNear: id,
     onPick: (r) => {
       api
         .moveSubtree(id, r.id)

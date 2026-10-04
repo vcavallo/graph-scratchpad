@@ -13,6 +13,7 @@ import { useLoader } from '@/composables/useLoader'
 import { mergeRefs, refCache } from '@/state/refs'
 import { labelize } from '@/lib/tokens'
 import { KIND_NAMES } from '@/lib/kinds'
+import { subtreeIds } from '@/lib/treeOps'
 import { editing, focusEditor } from '@/state/focus'
 import { prefs } from '@/state/prefs'
 import { openLinkPicker } from '@/lib/linking'
@@ -135,9 +136,9 @@ function moveTo() {
   openPicker({
     mode: 'move',
     title: `Move “${titleLabel.value}” to`,
-    placeholder: 'Search pads and items',
-    excludeIds: [props.id],
-    emptyKinds: ['pad'],
+    placeholder: 'Search, or browse below',
+    excludeIds: data.value ? subtreeIds(data.value.tree) : [props.id],
+    startNear: props.id,
     onPick: (r) => {
       api
         .moveSubtree(props.id, r.id)
