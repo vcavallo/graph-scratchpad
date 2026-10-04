@@ -8,7 +8,7 @@ import EditToolbar from '@/components/EditToolbar.vue'
 import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
 import { api } from '@/db/api'
-import type { Kind } from '@/db/types'
+import type { Kind, TreeNode } from '@/db/types'
 import { useLoader } from '@/composables/useLoader'
 import { mergeRefs, refCache } from '@/state/refs'
 import { labelize } from '@/lib/tokens'
@@ -127,16 +127,8 @@ const titleLabel = computed(() => {
   return (l.length > 40 ? l.slice(0, 39) + '…' : l) || 'Untitled'
 })
 
-function countDescendants(t: { children: { children: unknown[] }[] }): number {
-  let n = 0
-  const walk = (x: { children: unknown[] }) => {
-    for (const c of x.children as { children: unknown[] }[]) {
-      n++
-      walk(c)
-    }
-  }
-  walk(t)
-  return n
+function countDescendants(t: TreeNode): number {
+  return t.children.reduce((n, c) => n + 1 + countDescendants(c), 0)
 }
 
 function moveTo() {
