@@ -17,6 +17,9 @@ const scope = globalThis as unknown as WorkerScope
 
 const DB_FILE = '/scratchpad.sqlite3'
 const LOCK_NAME = 'graph-scratchpad-db'
+const POOL_DIR = '.graph-scratchpad'
+/** sqlite-wasm keeps the pool's files in this subdirectory. */
+const POOL_FILES_DIR = '.opaque'
 
 let store: Store | null = null
 let storage: DbInfo['storage'] = 'memory'
@@ -85,13 +88,88 @@ function handle(req: WorkerRequest): void {
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// Worker-only OPFS API (not in the DOM typings).
+type SyncCapableFile = FileSystemFileHandle & { createSyncAccessHandle(): Promise<{ close(): void }> }
+
+/**
+ * opfs-sahpool needs an exclusive handle on every file in its pool. Right
+ * after a reload, the previous page's worker may still be letting go of them
+ * (the Web Lock can be released first). Wait until each file can be opened.
+ */
+async function waitForPoolFiles(timeoutMs = 10_000): Promise<void> {
+  let dir: FileSystemDirectoryHandle
+  try {
+    const root = await navigator.storage.getDirectory()
+    dir = await (await root.getDirectoryHandle(POOL_DIR)).getDirectoryHandle(POOL_FILES_DIR)
+  } catch {
+    return // first run: nothing there yet
+  }
+  const end = Date.now() + timeoutMs
+  for (let attempt = 0; ; attempt++) {
+    const opened: { close(): void }[] = []
+    try {
+      for await (const h of (dir as unknown as { values(): AsyncIterable<FileSystemHandle> }).values()) {
+        if (h.kind === 'file') opened.push(await (h as SyncCapableFile).createSyncAccessHandle())
+      }
+      return
+    } catch (err) {
+      if (Date.now() > end) throw err
+      await sleep(Math.min(100 * 2 ** attempt, 1000))
+    } finally {
+      for (const h of opened) h.close()
+    }
+  }
+}
+
+/**
+ * When installOpfsSAHPoolVfs fails it calls removeVfs(), which deletes the
+ * pool directory, i.e. the database. While it runs, refuse to delete the pool
+ * directories (it only removes a scratch file of its own on the way to
+ * success), so a failed open leaves the data where it is.
+ */
+async function withoutDeletes<T>(fn: () => Promise<T>): Promise<T> {
+  const proto = FileSystemDirectoryHandle.prototype
+  const original = proto.removeEntry
+  proto.removeEntry = function (this: FileSystemDirectoryHandle, name: string, opts?: FileSystemRemoveOptions) {
+    if (name === POOL_DIR || name === POOL_FILES_DIR) {
+      return Promise.reject(new DOMException('Not while opening the database', 'NoModificationAllowedError'))
+    }
+    return original.call(this, name, opts)
+  }
+  try {
+    return await fn()
+  } finally {
+    proto.removeEntry = original
+  }
+}
+
+async function openPool(sqlite3: Awaited<ReturnType<typeof sqlite3InitModule>>) {
+  await waitForPoolFiles()
+  return withoutDeletes(async () => {
+    let last: unknown
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await sleep(250 * 2 ** attempt)
+      try {
+        // forceReinitIfPreviouslyFailed: without it a failed attempt is cached and every retry fails too.
+        const opts = { directory: POOL_DIR, forceReinitIfPreviouslyFailed: attempt > 0 }
+        return await sqlite3.installOpfsSAHPoolVfs(opts as Parameters<typeof sqlite3.installOpfsSAHPoolVfs>[0])
+      } catch (err) {
+        last = err
+      }
+    }
+    throw last
+  })
+}
+
 async function open(): Promise<void> {
   const sqlite3 = await sqlite3InitModule()
   sqliteVersion = sqlite3.version.libVersion
   let reason: string | undefined
   let db
   try {
-    const pool = await sqlite3.installOpfsSAHPoolVfs({ directory: '.graph-scratchpad' })
+    const pool = await openPool(sqlite3)
     db = new pool.OpfsSAHPoolDb(DB_FILE)
     storage = 'opfs-sahpool'
   } catch (err) {

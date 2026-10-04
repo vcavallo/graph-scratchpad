@@ -2,7 +2,7 @@
 // Usage: npm run e2e   (set BASE_URL to test an already-running server)
 import { spawn, execSync } from 'node:child_process'
 
-const suites = ['edit.mjs', 'links.mjs', 'more.mjs', 'regressions.mjs', 'graph.mjs', 'todos.mjs', 'sync.mjs']
+const suites = ['edit.mjs', 'links.mjs', 'more.mjs', 'regressions.mjs', 'graph.mjs', 'todos.mjs', 'sync.mjs', 'reload.mjs']
 let server
 if (!process.env.BASE_URL) {
   execSync('npx vite build', { stdio: 'inherit' })
