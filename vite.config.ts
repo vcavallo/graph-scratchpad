@@ -11,8 +11,8 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Graph Scratchpad',
-        short_name: 'Scratchpad',
+        name: 'Graph Paper',
+        short_name: 'Graph Paper',
         description: 'Nested lists that link to each other. Works offline; syncs with your own server when it can.',
         theme_color: '#f4f7f8',
         background_color: '#f4f7f8',

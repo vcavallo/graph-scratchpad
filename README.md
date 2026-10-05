@@ -1,4 +1,4 @@
-# Graph Scratchpad
+# Graph Paper
 
 A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device, and it syncs between your devices through a small server of your own when it can reach one.
 
@@ -8,6 +8,8 @@ A phone-first outliner that stores everything as a graph. Write nested lists of 
 </p>
 
 A pad with a numbered list, to-dos and plain notes, and links to places, a person and a "waiting" state (left), and the same pad's graph three steps out (right). `npm run screenshots` rebuilds both from example data.
+
+Inside, it’s still `graph-scratchpad`: the repo, the on-device database, export files, and the servers’ paths and services.
 
 See `CLAUDE.md` for the design decisions and data model, and `PLAN.md` for milestones.
 

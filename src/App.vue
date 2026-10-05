@@ -61,7 +61,7 @@ watch(
 
     <main class="main">
       <div v-if="dbState.status === 'waiting'" class="empty-state">
-        Scratchpad is open in another tab or window. Close it there and this one will pick up.
+        Graph Paper is open in another tab or window. Close it there and this one will pick up.
       </div>
       <div v-else-if="dbState.status === 'fatal'" class="empty-state error">
         The database couldn’t start: {{ dbState.error }}

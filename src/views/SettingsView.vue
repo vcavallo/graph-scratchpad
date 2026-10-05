@@ -87,7 +87,7 @@ function fmtBytes(n: number | undefined): string {
 async function backupFile(): Promise<File> {
   const data = await api.exportAll()
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
-  return new File([JSON.stringify(data, null, 1)], `scratchpad-${stamp}.json`, { type: 'application/json' })
+  return new File([JSON.stringify(data, null, 1)], `graph-paper-${stamp}.json`, { type: 'application/json' })
 }
 
 async function download() {
@@ -115,7 +115,7 @@ async function share() {
   busy.value = true
   try {
     const file = await backupFile()
-    await navigator.share({ files: [file], title: 'Scratchpad backup' })
+    await navigator.share({ files: [file], title: 'Graph Paper backup' })
     recordBackup()
   } catch (e) {
     if ((e as Error).name !== 'AbortError') reportError(e)
@@ -133,7 +133,7 @@ async function onImportFile(e: Event) {
   try {
     data = JSON.parse(await file.text())
   } catch {
-    toast('That file isn’t valid JSON. Choose a backup exported from Scratchpad.', { tone: 'error', ms: 6000 })
+    toast('That file isn’t valid JSON. Choose a backup exported from Graph Paper.', { tone: 'error', ms: 6000 })
     return
   }
   const count = Array.isArray((data as { nodes?: unknown[] })?.nodes) ? (data as { nodes: unknown[] }).nodes.length : 0

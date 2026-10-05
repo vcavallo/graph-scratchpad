@@ -2,6 +2,8 @@
 
 ## What this is
 
+The app is called **Graph Paper** (manifest name, title, UI text). Internal identifiers keep the old name `graph-scratchpad` and must not be renamed: the OPFS directory and database file, the Web Lock, the export file’s `app` field, deploy paths, and the systemd services.
+
 A phone-first note-taking app that feels like a nested to-do list but stores everything as a graph.
 
 You write in an outline: nested bullets, reorderable, indent/outdent. Any bullet can link to any other node, even one in a different list. For example, "buy 3/4-inch PVC elbows" on a project list links to a "Hardware store" node, so opening "Hardware store" shows everything you need to get there, across all lists. The outline is the main editing surface; a read-only graph view is secondary.
