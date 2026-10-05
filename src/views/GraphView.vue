@@ -47,6 +47,8 @@ interface SimEdge {
   type: 'child' | 'link'
   /** Position under a numbered parent. (Not `index`: d3's link force overwrites that.) */
   slot?: number
+  /** For links: what the link means ("buy at"), shown on the line. */
+  phrase?: string | null
 }
 
 // Numbered children hang off their parent in a column, like an outline.
@@ -83,15 +85,20 @@ function forceOrdered(strength = 0.35) {
     }
     if (!boxes.size) return
     for (const n of nodes) {
-      if (n.order !== null || fixed(n)) continue
+      if (n.order !== null) continue
       const hw = Math.max(n.r, (n.text.length * CHAR_W) / 2) + 4
       for (const [p, box] of boxes) {
         if (p === n) continue
         const ox = Math.min(n.x + hw, box.r) - Math.max(n.x - hw, box.l)
         const oy = Math.min(n.y + n.r + 20, box.b) - Math.max(n.y - n.r, box.t)
         if (ox <= 0 || oy <= 0) continue
-        if (ox < oy) n.vx = (n.vx ?? 0) + (n.x < (box.l + box.r) / 2 ? -ox : ox) * 0.3
-        else n.vy = (n.vy ?? 0) + (n.y < (box.t + box.b) / 2 ? -oy : oy) * 0.3
+        const horizontal = ox < oy
+        const sign = horizontal ? (n.x < (box.l + box.r) / 2 ? -1 : 1) : n.y < (box.t + box.b) / 2 ? -1 : 1
+        // Move the node out of the column, or if it's pinned (the focus, or being dragged), move the column away.
+        const [who, dir] = fixed(n) ? (fixed(p) ? [null, 0] : [p, -sign]) : [n, sign]
+        if (!who) continue
+        if (horizontal) who.vx = (who.vx ?? 0) + dir * ox * 0.3
+        else who.vy = (who.vy ?? 0) + dir * oy * 0.3
       }
     }
   }
@@ -118,6 +125,8 @@ const focus = computed(() => data.value?.nodes.find((n) => n.id === focusId.valu
 let sim: Simulation<SimNode, SimEdge> | null = null
 let zoomer: ZoomBehavior<SVGSVGElement, unknown> | null = null
 let gEdges: Selection<SVGGElement, unknown, null, undefined> | null = null
+let gEdgeLabels: Selection<SVGGElement, unknown, null, undefined> | null = null
+let busyGraph = false
 let gNodes: Selection<SVGGElement, unknown, null, undefined> | null = null
 const byId = new Map<string, SimNode>()
 let simNodes: SimNode[] = []
@@ -190,7 +199,9 @@ function update(d: Neighborhood) {
       target: byId.get(e.dst)!,
       type: e.type,
       slot: e.index,
+      phrase: e.phrase,
     }))
+  busyGraph = busy
   // New numbered items start in their slots, so the column forms already in order.
   for (const e of simEdges) {
     if (e.slot === undefined || !fresh.has(e.target.id)) continue
@@ -242,6 +253,18 @@ function render() {
     .join('line')
     .attr('class', (e) => (e.type === 'link' ? 'edge-link' : 'edge-child'))
     .attr('marker-end', (e) => (e.type === 'link' ? 'url(#arrow)' : null))
+  // Say what each link means; in a crowded graph, only for the focus's own links.
+  gEdgeLabels
+    ?.selectAll<SVGTextElement, SimEdge>('text')
+    .data(
+      simEdges.filter(
+        (e) => e.phrase && (!busyGraph || e.source.id === focusId.value || e.target.id === focusId.value),
+      ),
+      (e) => e.key,
+    )
+    .join('text')
+    .attr('class', 'edge-label')
+    .text((e) => e.phrase!)
 
   const nodes = gNodes
     .selectAll<SVGGElement, SimNode>('g.gnode')
@@ -307,6 +330,10 @@ function ticked() {
     this.setAttribute('x2', String(e.target.x - ux * (e.target.r + pad)))
     this.setAttribute('y2', String(e.target.y - uy * (e.target.r + pad)))
   })
+  gEdgeLabels
+    ?.selectAll<SVGTextElement, SimEdge>('text')
+    .attr('x', (e) => (e.source.x + e.target.x) / 2)
+    .attr('y', (e) => (e.source.y + e.target.y) / 2 - 3)
   gNodes.selectAll<SVGGElement, SimNode>('g.gnode').attr('transform', (n) => `translate(${n.x},${n.y})`)
 }
 
@@ -406,6 +433,7 @@ onMounted(() => {
   const el = svg.value!
   const root = select(el).append('g').attr('class', 'graph-root')
   gEdges = root.append('g').attr('class', 'edges')
+  gEdgeLabels = root.append('g').attr('class', 'edge-labels')
   gNodes = root.append('g').attr('class', 'nodes')
   zoomer = zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.2, 5])

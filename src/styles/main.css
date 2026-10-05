@@ -954,6 +954,59 @@ a {
   border-top: 1px solid var(--rule);
 }
 
+/* What the links say they are: filter chips over the list, and a label on each row. */
+.rel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+
+.rel-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.rel-chip .n {
+  color: var(--ink-faint);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rel-chip.other {
+  font-style: italic;
+  font-weight: 550;
+}
+
+.rel-chip[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.rel-chip[aria-pressed='true'] .n {
+  color: var(--on-ink);
+  opacity: 0.75;
+}
+
+.crumbline .rel {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--hl-place);
+  color: var(--hl-place-ink);
+  font-weight: 700;
+}
+
 .backlink-mark {
   flex: none;
   display: grid;
@@ -1467,6 +1520,18 @@ body:has(.edit-toolbar) .toasts {
 
 .gnode.done {
   opacity: 0.55;
+}
+
+.edge-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--hl-place-ink);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .gnode .tick {

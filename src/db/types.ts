@@ -84,6 +84,8 @@ export interface Crumb {
 
 export interface Backlink {
   source: NodeInfo
+  /** What the link means, guessed from its wording ("buy at", "waiting on"), or null. */
+  phrase: string | null
   /** Ancestors of the source, root (pad) first, not including the source. */
   crumbs: Crumb[]
 }
@@ -162,6 +164,8 @@ export interface GraphEdge {
   type: EdgeType
   /** For child edges under a numbered parent: the child's position (0-based). */
   index?: number
+  /** For links: what the link means, from its wording. */
+  phrase?: string | null
 }
 
 export interface Neighborhood {

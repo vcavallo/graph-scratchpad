@@ -3,6 +3,7 @@ import type { SqlDb } from './sql'
 import { LATEST_SCHEMA_VERSION, migrate, schemaVersion } from './migrations'
 import { labelize, makeToken, parseTokens } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
+import { PHRASES_VERSION, linkContexts } from '../lib/relations'
 import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
@@ -138,6 +139,15 @@ export class Store {
     migrate(db)
     // Never hand out a time earlier than one already recorded (the device's clock may have moved back).
     this.#hlc.observe(db.get<{ h: string | null }>('SELECT max(hlc) AS h FROM sync_clock')?.h)
+    // Link phrases are derived from text: fill them in after an upgrade or a change in how they're guessed.
+    if (this.#meta('link_phrases') !== PHRASES_VERSION) {
+      db.tx(() => {
+        for (const r of db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE instr(text, '[[') > 0`)) {
+          this.#reconcileLinks(r.id, r.text)
+        }
+        this.#setMeta('link_phrases', PHRASES_VERSION)
+      })
+    }
   }
 
   #meta(key: string): string | undefined {
@@ -276,11 +286,16 @@ export class Store {
     )
   }
 
-  /** Make the node's outgoing link edges match the [[uuid]] tokens in its text. */
+  /**
+   * Make the node's outgoing link edges match the [[uuid]] tokens in its text,
+   * each with the relation its wording suggests.
+   */
   #reconcileLinks(id: string, text: string): void {
     const wanted = new Set(parseTokens(text).filter((t) => t !== id))
-    const existing = this.db.all<{ id: string; dst: string }>(
-      `SELECT id, dst FROM edges WHERE src = ? AND type = 'link'`,
+    const contexts = wanted.size ? linkContexts(text) : new Map()
+    const phraseOf = (dst: string) => contexts.get(dst)?.phrase ?? null
+    const existing = this.db.all<{ id: string; dst: string; phrase: string | null }>(
+      `SELECT id, dst, phrase FROM edges WHERE src = ? AND type = 'link'`,
       [id],
     )
     const have = new Set<string>()
@@ -289,6 +304,7 @@ export class Store {
         this.db.exec('DELETE FROM edges WHERE id = ?', [e.id])
       } else {
         have.add(e.dst)
+        if (e.phrase !== phraseOf(e.dst)) this.db.exec('UPDATE edges SET phrase = ? WHERE id = ?', [phraseOf(e.dst), e.id])
       }
     }
     const missing = [...wanted].filter((d) => !have.has(d))
@@ -303,8 +319,8 @@ export class Store {
     for (const dst of missing) {
       if (!present.has(dst)) continue // dangling token; leave it as text
       this.db.exec(
-        `INSERT INTO edges (id, src, dst, type, sort_key, created_at) VALUES (?, ?, ?, 'link', NULL, ?)`,
-        [this.#uuid(), id, dst, this.#now()],
+        `INSERT INTO edges (id, src, dst, type, sort_key, created_at, phrase) VALUES (?, ?, ?, 'link', NULL, ?, ?)`,
+        [this.#uuid(), id, dst, this.#now(), phraseOf(dst)],
       )
     }
   }
@@ -934,13 +950,13 @@ export class Store {
   }
 
   getBacklinks(id: string): Backlink[] {
-    const rows = this.db.all<RawNode>(
-      `SELECT ${NODE_COLS.split(', ').map((c) => 's.' + c).join(', ')}
+    const rows = this.db.all<RawNode & { phrase: string | null }>(
+      `SELECT ${NODE_COLS.split(', ').map((c) => 's.' + c).join(', ')}, e.phrase
        FROM edges e JOIN nodes s ON s.id = e.src
        WHERE e.dst = ? AND e.type = 'link' AND s.deleted_at IS NULL`,
       [id],
     )
-    const out = rows.map((r) => ({ source: toInfo(r), crumbs: this.getAncestors(r.id) }))
+    const out = rows.map((r) => ({ source: toInfo(r), phrase: r.phrase, crumbs: this.getAncestors(r.id) }))
     const pathOf = (b: Backlink) => b.crumbs.map((c) => c.label).join('\u0000').toLowerCase()
     // Open to-dos, then plain mentions, then finished to-dos.
     const rank = (b: Backlink) => (b.source.done ? 2 : b.source.task ? 0 : 1)
@@ -1142,11 +1158,12 @@ export class Store {
     }
     const ids = [...hopOf.keys()]
     const edges = this.db.all<GraphEdge>(
-      `SELECT src, dst, type FROM edges
+      `SELECT src, dst, type, phrase FROM edges
        WHERE type IN ('child', 'link')
          AND src IN (SELECT value FROM json_each(?1)) AND dst IN (SELECT value FROM json_each(?1))`,
       [JSON.stringify(ids)],
     )
+    for (const e of edges) if (e.phrase == null) delete e.phrase // only links that say what they mean
     // Children of numbered lists carry their position, so the graph can lay them out in order.
     const numbered = new Set(
       this.db
@@ -1551,6 +1568,10 @@ export class Store {
           e.sort_key,
           e.created_at,
         ])
+      }
+      // Links are derived from text: rebuild them (with their phrases) rather than trust the file.
+      for (const r of this.db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE instr(text, '[[') > 0`)) {
+        this.#reconcileLinks(r.id, r.text)
       }
       // Pads from older exports may lack a root sort key.
       for (const p of this.db.all<{ id: string }>(

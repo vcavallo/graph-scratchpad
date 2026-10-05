@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fuzzyScore } from '../src/lib/fuzzy'
 import { labelize, makeToken, parseTokens, splitTokens } from '../src/lib/tokens'
 import { pasteLines, typedMarker } from '../src/lib/editorDom'
+import { linkContexts } from '../src/lib/relations'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -74,5 +75,44 @@ describe('list markers', () => {
       { text: 'plain' },
       { text: 'jam', task: true, done: false },
     ])
+  })
+})
+
+describe('link relations', () => {
+  const S = '33333333-3333-4333-8333-333333333333'
+  const phrase = (text: string, id = A) => linkContexts(text.replace(/@/g, makeToken(id))).get(id)?.phrase ?? null
+
+  it('reads the words before a link', () => {
+    expect(phrase('Buy 3/4-inch PVC elbows at @')).toBe('buy at')
+    expect(phrase('Pick up teflon tape at @ today')).toBe('pick up at')
+    expect(phrase('Drop off returns at the @')).toBe('drop off at')
+    expect(phrase('waiting on @')).toBe('waiting on')
+    expect(phrase('Get everything on the @')).toBe('get on')
+    expect(phrase('Ideas from @, mostly good')).toBe('from')
+    expect(phrase('Call @ about the ladder')).toBe('call')
+    expect(phrase('Ask @ which zone leaks')).toBe('ask')
+    expect(phrase('Borrow @’s ladder')).toBe('borrow')
+  })
+
+  it('reads the words after a link that opens its clause', () => {
+    expect(phrase('@ owes me $20')).toBe('owes')
+    expect(phrase('@ closes at 6 on Sundays')).toBe('closes')
+    expect(phrase('@ is waiting on parts')).toBe('waiting on')
+    expect(phrase("@'s ladder is broken")).toBeNull()
+    expect(phrase('Sprinkler: @ said zone 3')).toBe('said')
+  })
+
+  it('treats a bare mention as no relation, and carries a relation across "and"', () => {
+    expect(phrase('@')).toBeNull()
+    expect(phrase('Thinking about @ stuff')).toBe('thinking about')
+    const text = `Lunch with ${makeToken(A)} and ${makeToken(S)}`
+    const ctx = linkContexts(text)
+    expect([ctx.get(A)?.phrase, ctx.get(S)?.phrase]).toEqual(['with', 'with'])
+  })
+
+  it('keeps the surrounding words for later', () => {
+    const ctx = linkContexts(`Buy elbows at ${makeToken(A)} before Saturday. Then rest`).get(A)!
+    expect(ctx.before).toBe('buy elbows at')
+    expect(ctx.after).toBe('before saturday')
   })
 })

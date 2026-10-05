@@ -11,10 +11,22 @@ const props = defineProps<{ backlinks: Backlink[]; heading: string }>()
 const emit = defineEmits<{ toggle: [id: string, done: boolean] }>()
 const router = useRouter()
 
+// What the links say they are ("buy at", "waiting on"), most used first; '' is "no relation".
+const relations = computed(() => {
+  const counts = new Map<string, number>()
+  for (const b of props.backlinks) counts.set(b.phrase ?? '', (counts.get(b.phrase ?? '') ?? 0) + 1)
+  return [...counts]
+    .map(([phrase, count]) => ({ phrase, count }))
+    .sort((a, b) => b.count - a.count || (a.phrase === '' ? 1 : b.phrase === '' ? -1 : a.phrase.localeCompare(b.phrase)))
+})
+const picked = ref<string | null>(null)
+const filter = computed(() => (picked.value !== null && relations.value.some((r) => r.phrase === picked.value) ? picked.value : null))
+const shown = computed(() => (filter.value === null ? props.backlinks : props.backlinks.filter((b) => (b.phrase ?? '') === filter.value)))
+
 // Open to-dos first, then plain mentions (notes, pads, places), then what's done.
-const open = computed(() => props.backlinks.filter((b) => b.source.task && !b.source.done))
-const mentions = computed(() => props.backlinks.filter((b) => !b.source.task))
-const done = computed(() => props.backlinks.filter((b) => b.source.done))
+const open = computed(() => shown.value.filter((b) => b.source.task && !b.source.done))
+const mentions = computed(() => shown.value.filter((b) => !b.source.task))
+const done = computed(() => shown.value.filter((b) => b.source.done))
 const showDone = ref(prefs.showDoneBacklinks)
 
 const summary = computed(() => {
@@ -41,6 +53,22 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
       <span v-if="summary" class="count">{{ summary }}</span>
     </h2>
     <p v-if="!backlinks.length" class="empty-note">Nothing links here yet. Type @ in any list to link to it.</p>
+    <div v-if="relations.length > 1" class="rel-chips" role="group" aria-label="Show links by kind">
+      <button type="button" class="rel-chip" :aria-pressed="filter === null" @click="picked = null">
+        All <span class="n">{{ backlinks.length }}</span>
+      </button>
+      <button
+        v-for="r in relations"
+        :key="r.phrase"
+        type="button"
+        class="rel-chip"
+        :class="{ other: !r.phrase }"
+        :aria-pressed="filter === r.phrase"
+        @click="picked = filter === r.phrase ? null : r.phrase"
+      >
+        {{ r.phrase || 'other' }} <span class="n">{{ r.count }}</span>
+      </button>
+    </div>
     <ul v-if="open.length" class="backlink-list">
       <li v-for="b in open" :key="b.source.id" class="backlink">
         <button
@@ -54,7 +82,9 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span class="box" />
         </button>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length" class="crumbline">{{ crumbText(b) }}</div>
+          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
+            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          </div>
           <TextView :text="b.source.text" />
         </div>
       </li>
@@ -66,7 +96,9 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span v-else class="dot" />
         </span>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length" class="crumbline">{{ crumbText(b) }}</div>
+          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
+            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          </div>
           <TextView :text="b.source.text" />
         </div>
       </li>
@@ -87,7 +119,9 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span class="box"><Icon name="check" :size="15" :stroke="3" /></span>
         </button>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length" class="crumbline">{{ crumbText(b) }}</div>
+          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
+            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          </div>
           <TextView :text="b.source.text" />
         </div>
       </li>

@@ -65,6 +65,7 @@ Conventions within the model:
 - Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
 - `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once), and for sync `device_id`, `sync_enabled`, `sync_cursor`, `sync_epoch`, `sync_schema`.
 - Migration 5 adds `sync_clock` (per node and field: clock time of the last change, and whether it's unsent) with triggers on `nodes` and child `edges`, and `nodes.purged` (emptied from the trash; the row stays as a tombstone). Clock '0' marks the untouched welcome pad (never sent unless edited, dropped when joining a server that has data); '' marks a field not yet received. Sibling ties on sort key break by node id, the same on every device.
+- Migration 6 adds `edges.phrase`: what a link means ("buy at", "waiting on"), guessed from the words before and after its token (`src/lib/relations.ts`) every time links are reconciled. Derived like link edges, so not synced; bumping `PHRASES_VERSION` recomputes them on next start. This is step 1 of emergent typed connections; next is refining phrases with a model on the server (Haiku) and a Relations screen to merge and rename them.
 
 ## Code conventions
 

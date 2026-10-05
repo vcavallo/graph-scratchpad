@@ -805,3 +805,36 @@ describe('to-dos and bullets', () => {
     expect([old.getNode(note)!.task, old.getNode(todo)!.task, old.getNode(pad)!.task]).toEqual([true, true, false])
   })
 })
+
+describe('link phrases', () => {
+  it('records what each link means and keeps it current as the text changes', () => {
+    const place = s.createNode('place', 'Shop')
+    const sam = s.createNode('person', 'Sam')
+    const x = s.createChild(pad, undefined, { text: `Buy elbows at ${makeToken(place)}, ask ${makeToken(sam)}` })
+    const phraseTo = (dst: string) => s.getBacklinks(dst).find((b) => b.source.id === x)?.phrase
+    expect([phraseTo(place), phraseTo(sam)]).toEqual(['buy at', 'ask'])
+    s.updateText(x, `Return the clamp to ${makeToken(place)}`)
+    expect(phraseTo(place)).toBe('return to')
+    expect(s.getNeighborhood(x, 1).edges.find((e) => e.dst === place)?.phrase).toBe('return to')
+  })
+
+  it('fills in phrases for links made before phrases existed', async () => {
+    const place = s.createNode('place', 'Shop')
+    const x = s.createChild(pad, undefined, { text: `waiting on ${makeToken(place)}` })
+    s.db.exec(`UPDATE edges SET phrase = NULL`)
+    s.db.exec(`DELETE FROM meta WHERE key = 'link_phrases'`)
+    const reopened = await makeStore({ db: s.db })
+    expect(reopened.getBacklinks(place).map((b) => [b.source.id, b.phrase])).toEqual([[x, 'waiting on']])
+  })
+})
+
+describe('import and link phrases', () => {
+  it('works out link phrases for imported lines', async () => {
+    const place = s.createNode('place', 'Shop')
+    s.createChild(pad, undefined, { text: `Buy elbows at ${makeToken(place)}` })
+    const file = JSON.parse(JSON.stringify(s.exportAll()))
+    const fresh = await makeStore()
+    fresh.importAll(file)
+    expect(fresh.getBacklinks(place).map((b) => b.phrase)).toEqual(['buy at'])
+  })
+})

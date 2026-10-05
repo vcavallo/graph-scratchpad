@@ -134,6 +134,13 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
       END;
     `,
   },
+  {
+    // What a link means, guessed from the words around it (src/lib/relations.ts),
+    // e.g. "buy at" or "waiting on". Derived from the text like the link itself,
+    // so it isn't synced; the Store fills it in for existing links.
+    version: 6,
+    sql: `ALTER TABLE edges ADD COLUMN phrase TEXT;`,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

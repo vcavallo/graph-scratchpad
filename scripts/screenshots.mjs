@@ -131,6 +131,15 @@ const BASE = process.env.BASE_URL
 const { ctx, close } = await launch({ userDataDir: mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'gs-shots-')) })
 const page = ctx.pages()[0] ?? (await ctx.newPage())
 const hideToasts = () => page.addStyleTag({ content: '.toasts { display: none !important }' })
+// The graph's starting positions are random; seed them so the screenshot is the same every time.
+const SEED = Number(process.env.SEED ?? 3)
+await page.addInitScript((seed) => {
+  let x = seed
+  Math.random = () => {
+    x = (x * 1664525 + 1013904223) >>> 0
+    return x / 2 ** 32
+  }
+}, SEED)
 
 try {
   await page.goto(BASE + '/')
