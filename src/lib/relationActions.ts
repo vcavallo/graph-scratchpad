@@ -20,10 +20,11 @@ export interface LabelTarget {
 }
 
 /** Pick one of your relations, or name a new one. */
-export function pickRelation(title: string, onPick: (r: PickResult) => void, exclude: string[] = []): void {
+export function pickRelation(title: string, onPick: (r: PickResult) => void, exclude: string[] = [], initialQuery?: string): void {
   openPicker({
     mode: 'link',
     title,
+    initialQuery,
     placeholder: 'Find a relation, or type a new one',
     kinds: ['relation'],
     excludeIds: [NO_RELATION_ID, ...exclude],

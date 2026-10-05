@@ -50,6 +50,26 @@ export interface RawNode {
   category: string | null
   /** For a 'category' node: its CategoryProps as JSON. */
   props: string | null
+  /** Facts about this node, as JSON Fact[] (migration 11). */
+  facts: string | null
+}
+
+/** A fact about a node: "cofounder of" Acme. Stored on the node it's about. */
+export interface Fact {
+  /** What it's about: the target node. */
+  to: string
+  /** The relation (a 'relation' node), if it's one of yours. */
+  rel: string | null
+  /** The relation's name when the fact was made (shown if the relation is gone). */
+  name: string
+}
+
+/** A fact as shown on its node's page. */
+export interface FactView {
+  index: number
+  relationId: string | null
+  name: string
+  target: RefInfo
 }
 
 /** A row of `edges` as stored. */
@@ -132,6 +152,8 @@ export interface Backlink {
   pinned: boolean
   /** The line is nothing but this link: it's this item, pulled into another list. */
   alsoOn: boolean
+  /** Not a line but a fact about the source ("Alex · cofounder of"). */
+  fact: boolean
   /** Ancestors of the source, root (pad) first, not including the source. */
   crumbs: Crumb[]
 }
@@ -148,6 +170,8 @@ export interface NodeViewData {
   relationLinks: RelationLink[]
   /** For something you link to that has no kind yet: the kind its links suggest. */
   suggestedCategory: string | null
+  /** Facts about it. */
+  facts: FactView[]
 }
 
 export interface PadSummary {

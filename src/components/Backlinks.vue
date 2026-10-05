@@ -35,6 +35,8 @@ const relations = computed(() => {
 const active = computed(() => relations.value.find((r) => r.phrase === filter.value && r.phrase !== '') ?? null)
 
 function labelOptions(b: Backlink) {
+  // A fact is edited on the page of the thing it's about.
+  if (b.fact) return void router.push(`/n/${b.source.id}`)
   openLabelSheet({
     label: b.phrase,
     suggested: b.suggested,
@@ -55,7 +57,9 @@ const showDone = ref(prefs.showDoneBacklinks)
 const summary = computed(() => {
   const parts: string[] = []
   if (open.value.length) parts.push(`${open.value.length} open`)
-  const m = mentions.value.length
+  const f = mentions.value.filter((b) => b.fact).length
+  const m = mentions.value.length - f
+  if (f) parts.push(`${f} ${f === 1 ? 'fact' : 'facts'}`)
   if (m) parts.push(`${m} ${m === 1 ? 'mention' : 'mentions'}`)
   if (done.value.length) parts.push(`${done.value.length} done`)
   return parts.join(', ')

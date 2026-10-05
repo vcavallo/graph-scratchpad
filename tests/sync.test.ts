@@ -289,6 +289,20 @@ describe('sync', () => {
     expect(dump(a.s)).toEqual(dump(b.s))
   })
 
+  it('carries facts, with their links', async () => {
+    const server = makeServer()
+    const a = await device(server)
+    const b = await device(server)
+    const alex = a.s.createNode('person', 'Alex')
+    const acme = a.s.createNode('item', 'Acme')
+    const cofounder = a.s.keepRelation('cofounder of')
+    a.s.addFact(alex, cofounder, acme)
+    await settle(a, b)
+    expect(b.s.getNodeView(alex).facts.map((f) => [f.name, f.target.id])).toEqual([['cofounder of', acme]])
+    expect(b.s.getBacklinks(acme)).toMatchObject([{ fact: true, phrase: 'cofounder of' }])
+    expect(dump(a.s)).toEqual(dump(b.s))
+  })
+
   it('fills a new or reset server from the devices', async () => {
     const server = makeServer()
     const a = await device(server)

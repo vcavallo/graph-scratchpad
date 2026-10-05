@@ -1912,3 +1912,34 @@ body:has(.edit-toolbar) .toasts {
   text-decoration-color: var(--rule);
   text-underline-offset: 3px;
 }
+
+/* ------------------------------------------------------------ facts */
+
+.fact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.fact-rel {
+  color: var(--ink-soft);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fact .spacer {
+  flex: 1;
+}
+
+.facts-section .add-row {
+  margin-left: 0;
+  padding-left: 0;
+}

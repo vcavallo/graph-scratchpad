@@ -9,7 +9,7 @@ import { api } from '@/db/api'
 import { categories, pinnedCategories } from '@/state/categories'
 
 /** "New in Places: “Ace Hardware”", for your pinned kinds first, then the rest; then an item in the Inbox. */
-function createOptions() {
+export function createOptions() {
   const kinds = [...pinnedCategories.value, ...categories.value.filter((c) => !c.pinned)].slice(0, 4)
   return [
     ...kinds.map((c) => ({

@@ -21,6 +21,8 @@ import { labelize } from '@/lib/tokens'
 import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
 import { sendActions } from '@/lib/sendTo'
+import { noteToFact } from '@/lib/factActions'
+import { parseTokens } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
   addLabel: 'item',
@@ -372,6 +374,19 @@ function openMore(row: T.FlatRow) {
     // (A line that’s only a link sends the item it links to.)
     ...sendActions({ id: n.ref ?? n.id, label: labelOf(n) }, T.subtreeIds(n)),
   ]
+  // A note that links to something can become a fact about what it's under.
+  const under = T.locate(local.value, n.id)?.parent
+  if (under && parseTokens(n.text).length && !n.ref) {
+    actions.push({
+      label: `Make it a fact about “${labelOf(under)}”`,
+      icon: 'linked',
+      run: () => {
+        const ed = getEditor(key(n.id))
+        void ed?.flush()
+        noteToFact({ id: n.id, text: ed?.text() ?? n.text }, { id: under.id, label: labelOf(under) })
+      },
+    })
+  }
   if (row.hasChildren) {
     actions.push(
       {

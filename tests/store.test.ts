@@ -1053,3 +1053,62 @@ describe('a line that is only a link', () => {
     expect(reopened.getTree(pad).children.find((c) => c.id === line)?.ref).toBe(todo)
   })
 })
+
+describe('facts', () => {
+  function setup() {
+    const projects = s.createCategory('Projects')
+    const alex = s.createNode('person', 'Alex')
+    const acme = s.createContext('Acme', projects)
+    const cofounder = s.keepRelation('cofounder of')
+    return { alex, acme, cofounder }
+  }
+
+  it('states a fact about a node, as a labelled link from it', () => {
+    const { alex, acme, cofounder } = setup()
+    s.addFact(alex, cofounder, acme)
+    expect(s.getNodeView(alex).facts).toMatchObject([{ index: 0, name: 'cofounder of', relationId: cofounder, target: { id: acme } }])
+    expect(s.getBacklinks(acme)).toMatchObject([{ fact: true, phrase: 'cofounder of', relationId: cofounder, source: { id: alex } }])
+    expect(s.getNeighborhood(alex, 1).edges.find((e) => e.dst === acme)).toMatchObject({ type: 'link', phrase: 'cofounder of' })
+    // Listed as a fact, not again among the links in its text.
+    expect(s.getNodeView(alex).outgoing).toEqual([])
+    // Its title text is untouched, and editing it keeps the fact's link.
+    s.updateText(alex, 'Alex S.')
+    expect(s.getBacklinks(acme)).toHaveLength(1)
+  })
+
+  it('follows a renamed relation, and goes when removed', () => {
+    const { alex, acme, cofounder } = setup()
+    s.addFact(alex, cofounder, acme)
+    s.renameRelation(cofounder, 'co-founded')
+    expect(s.getNodeView(alex).facts[0].name).toBe('co-founded')
+    expect(s.getBacklinks(acme)[0].phrase).toBe('co-founded')
+    s.removeFact(alex, 0)
+    expect(s.getNodeView(alex).facts).toEqual([])
+    expect(s.getBacklinks(acme)).toEqual([])
+  })
+
+  it('turns a note under a node into a fact, and back', () => {
+    const { alex, acme, cofounder } = setup()
+    const note = s.createChild(alex, undefined, { text: `cofounder of ${makeToken(acme)}` })
+    expect(s.getBacklinks(acme)[0].fact).toBe(false)
+    s.noteToFact(note, cofounder)
+    expect(s.getChildren(alex)).toEqual([])
+    expect(s.getBacklinks(acme)).toMatchObject([{ fact: true, source: { id: alex } }])
+    const back = s.factToNote(alex, 0)
+    expect(s.getNode(back)?.text).toBe(`cofounder of ${makeToken(acme)}`)
+    expect(s.getNodeView(alex).facts).toEqual([])
+    expect(s.getBacklinks(acme)).toMatchObject([{ fact: false, source: { id: back } }])
+  })
+
+  it('keeps one relation per target, and can point a fact elsewhere', () => {
+    const { alex, acme, cofounder } = setup()
+    const advisor = s.keepRelation('advisor to')
+    s.addFact(alex, cofounder, acme)
+    s.addFact(alex, advisor, acme)
+    expect(s.getNodeView(alex).facts.map((f) => f.name)).toEqual(['advisor to'])
+    const other = s.createNode('item', 'Tapestry')
+    s.updateFact(alex, 0, { to: other })
+    expect(s.getBacklinks(acme)).toEqual([])
+    expect(s.getBacklinks(other)[0]).toMatchObject({ fact: true, phrase: 'advisor to' })
+  })
+})

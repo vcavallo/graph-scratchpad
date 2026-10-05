@@ -57,7 +57,7 @@ const creates = computed(() => {
 
 watch(req, async (r) => {
   if (!r) return
-  q.value = ''
+  q.value = r.initialQuery ?? ''
   results.value = []
   highlight.value = 0
   trail.value = []
@@ -74,7 +74,8 @@ watch(req, async (r) => {
     await browse()
   } else {
     void search()
-    void nextTick(() => input.value?.focus())
+    // Words already typed are selected, so typing something else replaces them.
+    void nextTick(() => (r.initialQuery ? input.value?.select() : input.value?.focus()))
   }
 })
 

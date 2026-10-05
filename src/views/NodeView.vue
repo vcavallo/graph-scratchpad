@@ -5,6 +5,8 @@ import EditableText from '@/components/EditableText.vue'
 import Outline from '@/components/Outline.vue'
 import Backlinks from '@/components/Backlinks.vue'
 import RelationLinks from '@/components/RelationLinks.vue'
+import FactsList from '@/components/FactsList.vue'
+import { addFact } from '@/lib/factActions'
 import { pickRelation } from '@/lib/relationActions'
 import { NO_RELATION_ID } from '@/db/types'
 import { categoryById } from '@/state/categories'
@@ -288,6 +290,9 @@ function openMenu() {
   } else {
     actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })
   }
+  if (kind.value !== 'category') {
+    actions.push({ label: 'Add a fact…', icon: 'linked', run: () => addFact({ id: props.id, label: titleLabel.value }) })
+  }
   const n = node.value
   if (kind.value === 'item' && !isHub.value) {
     actions.push({
@@ -411,6 +416,12 @@ onMounted(async () => {
         </button>
         <button type="button" class="link-btn" @click="chooseKind">Another kind…</button>
       </div>
+
+      <FactsList
+        v-if="!isRelation && !node.deleted && (data.facts.length || isHub)"
+        :facts="data.facts"
+        :subject="{ id, label: titleLabel }"
+      />
 
       <template v-if="isRelation && !node.deleted">
         <RelationLinks
