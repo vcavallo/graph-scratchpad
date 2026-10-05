@@ -165,7 +165,10 @@ export class RelationLabeler {
       .replace(TOKEN, (_m, t) => (t.toLowerCase() === p.dst ? `⟦${this.#label(p.dst)}⟧` : this.#label(t.toLowerCase())))
       .replace(/\s+/g, ' ')
       .trim()
-    const kind = this.#sync.field(p.dst, 'kind') ?? 'item'
+    // What it is: its kind of context ("Rooms", "Places"), or for older nodes their place/person kind.
+    const cat = this.#sync.field(p.dst, 'category')
+    const catName = typeof cat === 'string' ? this.#sync.field(cat, 'text') : undefined
+    const kind = typeof catName === 'string' && catName.trim() ? catName.trim() : (this.#sync.field(p.dst, 'kind') ?? 'item')
     const parent = this.#sync.field(p.src, 'pos')?.p
     return { id: String(i), line, linked: kind === 'item' ? 'item or list' : kind, ...(parent ? { under: this.#label(parent) } : {}) }
   }

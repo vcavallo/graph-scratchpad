@@ -9,6 +9,8 @@ import { confirmDialog, reportError, toast } from '@/state/ui'
 import { prefs } from '@/state/prefs'
 import { lastBackup, recordBackup, requestPersistence, storageStatus } from '@/lib/storage'
 import { installState, promptInstall } from '@/lib/install'
+import { MAX_PINNED, categories } from '@/state/categories'
+import { newCategory, togglePinned } from '@/lib/contextActions'
 
 const router = useRouter()
 const { data: info } = useLoader<DbInfo>(() => api.dbInfo())
@@ -203,6 +205,32 @@ async function askPersist() {
       <button v-if="storageStatus.persisted === false" type="button" class="btn" @click="askPersist">
         <Icon name="shield" :size="18" /> Ask to keep data
       </button>
+    </section>
+
+    <section class="card nav-card">
+      <h2 class="section-title">Tabs</h2>
+      <p class="note">
+        Give up to {{ MAX_PINNED }} kinds of context a tab in the bar. The rest are under Contexts, with everything else you
+        link to.
+      </p>
+      <ul class="list">
+        <li v-for="c in categories" :key="c.id" class="list-item">
+          <RouterLink :to="`/c/${c.id}`" class="list-main">
+            <span class="kind-icon" :class="`tone-${c.tone}`"><Icon :name="c.icon" :size="18" /></span>
+            <span class="list-label">{{ c.name }}</span>
+          </RouterLink>
+          <button
+            type="button"
+            class="pin-toggle"
+            :aria-pressed="c.pinned"
+            :aria-label="c.pinned ? `Take ${c.name} out of the bar` : `Give ${c.name} a tab`"
+            @click="togglePinned(c.id)"
+          >
+            <Icon name="pin" :size="18" /><span>{{ c.pinned ? 'In bar' : 'Pin' }}</span>
+          </button>
+        </li>
+      </ul>
+      <button type="button" class="btn" @click="newCategory"><Icon name="plus" :size="18" /> New kind of context</button>
     </section>
 
     <section class="card app-card">

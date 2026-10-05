@@ -1,21 +1,34 @@
 <script setup lang="ts">
+// Pads, the kinds of context you pinned (up to three), Contexts for the rest,
+// Search and Settings.
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from './Icon.vue'
+import { pinnedCategories } from '@/state/categories'
 
 const route = useRoute()
-const tabs = [
-  { to: '/pads', label: 'Pads', icon: 'list', match: ['/pads', '/n/'] },
-  { to: '/places', label: 'Places', icon: 'pin', match: ['/places'] },
-  { to: '/people', label: 'People', icon: 'person', match: ['/people'] },
-  { to: '/search', label: 'Search', icon: 'search', match: ['/search'] },
-  { to: '/settings', label: 'Settings', icon: 'settings', match: ['/settings', '/trash'] },
-]
-const current = computed(() => tabs.find((t) => t.match.some((m) => route.path.startsWith(m)))?.to)
+const tabs = computed(() => [
+  { to: '/pads', label: 'Pads', icon: 'list', match: (p: string) => p.startsWith('/pads') || p.startsWith('/n/') },
+  ...pinnedCategories.value.map((c) => ({ to: `/c/${c.id}`, label: c.name, icon: c.icon, match: (p: string) => p === `/c/${c.id}` })),
+  {
+    to: '/contexts',
+    label: 'Contexts',
+    icon: 'grid',
+    match: (p: string) => p.startsWith('/contexts') || (p.startsWith('/c/') && !pinnedCategories.value.some((c) => p === `/c/${c.id}`)),
+  },
+  { to: '/search', label: 'Search', icon: 'search', match: (p: string) => p.startsWith('/search') },
+  {
+    to: '/settings',
+    label: 'Settings',
+    icon: 'settings',
+    match: (p: string) => ['/settings', '/trash', '/relations'].some((s) => p.startsWith(s)),
+  },
+])
+const current = computed(() => tabs.value.find((t) => t.match(route.path))?.to)
 </script>
 
 <template>
-  <nav class="bottom-nav" aria-label="Sections">
+  <nav class="bottom-nav" :class="{ crowded: tabs.length > 5 }" aria-label="Sections">
     <RouterLink
       v-for="t in tabs"
       :key="t.to"
@@ -25,7 +38,7 @@ const current = computed(() => tabs.find((t) => t.match.some((m) => route.path.s
       :aria-current="current === t.to ? 'page' : undefined"
     >
       <Icon :name="t.icon" :size="22" />
-      <span>{{ t.label }}</span>
+      <span class="nav-label">{{ t.label }}</span>
     </RouterLink>
   </nav>
 </template>

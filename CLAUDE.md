@@ -27,7 +27,7 @@ Core insight: **the outline already is a graph.** Nesting is a `child` edge from
 ```sql
 CREATE TABLE nodes (
   id          TEXT PRIMARY KEY,          -- uuid
-  kind        TEXT NOT NULL DEFAULT 'item',  -- 'pad' | 'item' | 'place' | 'person' | 'relation'
+  kind        TEXT NOT NULL DEFAULT 'item',  -- 'pad' | 'item' | 'place' | 'person' | 'relation' | 'category'
   text        TEXT NOT NULL DEFAULT '',  -- may contain [[uuid]] link tokens
   done        INTEGER NOT NULL DEFAULT 0,
   collapsed   INTEGER NOT NULL DEFAULT 0,
@@ -59,6 +59,7 @@ Conventions within the model:
 - "Backlinks" for a node = incoming `link` edges, each shown with the source node's breadcrumb path (pad → ancestors → item).
 - Deleting a node soft-deletes it and its subtree. Link chips pointing to a deleted node render as struck-through, not as broken tokens.
 - Migration 2 adds `nodes.sort_key`: a fractional key ordering root nodes (pads), since they have no incoming `child` edge to carry order. NULL for everything else.
+- Migration 9: kinds of context. A node of kind `category` is a kind (Places, Rooms…), named by its text, with settings in `nodes.props` (JSON: icon, pinned, tone); `nodes.category` says what kind of context a node is (synced). Places and People exist from the start with fixed ids (`PLACES_ID`, `PEOPLE_ID`) and clock '0', so every device has the same two; older `place`/`person` nodes belong to them (`effectiveCategory`). "Is the database empty" checks ignore them. Contexts stay where they are in lists; kinds are suggested from the relations pointing at them (`#categorySuggester`). Up to 3 kinds are pinned to the bottom bar; the rest are under the Contexts tab.
 - Migration 3 adds `nodes.numbered`: 1 means this node's children are a numbered (ordered) list. The outline shows 1. 2. 3.; the graph lays them out as a column beside the parent, in order (`GraphEdge.index`).
 - Migration 4 adds `nodes.task`: 1 means a to-do (checkbox), 0 a plain bullet note. Invariants: only items can be to-dos, and only to-dos can be done (`setDone(true)` makes a bullet a to-do; `setTask(false)` unchecks). "Open" everywhere means `task = 1 AND done = 0`. A new item copies the to-do flag of the item next to it (`#taskFor`, mirrored by `taskFor` in treeOps); with no neighbouring item it's a to-do, except under a place/person. Items created from the link picker are bullets. `TreeNode.links` counts live incoming links, excluding finished to-dos.
 - Sibling keys are computed against *all* children, including soft-deleted ones, so keys stay unique and restored nodes return to their old position.

@@ -111,6 +111,8 @@ export interface PickerRequest {
   kinds?: Kind[]
   /** What "New …" can create (default: place, person, item in the Inbox). */
   createKinds?: Kind[]
+  /** Or exactly these "New …" options (the link picker: one per kind of context). */
+  createOptions?: { key: string; kind: Kind; label: (text: string) => string; create: (text: string, id: string) => Promise<unknown> }[]
   /** Move mode: start browsing among this node's siblings. */
   startNear?: string
   allowCreate?: boolean

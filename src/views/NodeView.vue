@@ -7,6 +7,8 @@ import Backlinks from '@/components/Backlinks.vue'
 import RelationLinks from '@/components/RelationLinks.vue'
 import { pickRelation } from '@/lib/relationActions'
 import { NO_RELATION_ID } from '@/db/types'
+import { categoryById } from '@/state/categories'
+import { chooseCategory } from '@/lib/contextActions'
 import EditToolbar from '@/components/EditToolbar.vue'
 import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
@@ -50,8 +52,7 @@ watch(
   (d) => {
     if (!d || decided) return
     decided = true
-    const hub = d.node.kind === 'place' || d.node.kind === 'person'
-    linksFirst.value = hub || (d.tree.children.length === 0 && d.backlinks.length > 0)
+    linksFirst.value = !!d.node.category || (d.tree.children.length === 0 && d.backlinks.length > 0)
   },
   { flush: 'sync' },
 )
@@ -66,22 +67,22 @@ watch(data, async (d) => {
 
 const node = computed(() => data.value?.node)
 const kind = computed<Kind>(() => node.value?.kind ?? 'item')
-const isHub = computed(() => kind.value === 'place' || kind.value === 'person')
+/** A context (a place, a person, a room…): leads with what links here; its children are notes. */
+const isHub = computed(() => !!node.value?.category)
+const category = computed(() => categoryById(node.value?.category))
+const suggested = computed(() => (isHub.value ? undefined : categoryById(data.value?.suggestedCategory)))
 const isRelation = computed(() => kind.value === 'relation')
 const isNoRelation = computed(() => props.id === NO_RELATION_ID)
 const titleKey = computed(() => `title:${props.id}`)
 const titleFocused = computed(() => editing.key === titleKey.value)
 const parent = computed(() => data.value?.ancestors.at(-1))
 
-const placeholder = computed(() =>
-  kind.value === 'pad' ? 'Name this pad' : kind.value === 'place' ? 'Name this place' : kind.value === 'person' ? 'Name' : 'Untitled',
-)
+const placeholder = computed(() => (kind.value === 'pad' ? 'Name this pad' : isHub.value ? 'Name' : 'Untitled'))
 
 const backTarget = computed(() => {
   if (parent.value) return { to: `/n/${parent.value.id}`, label: parent.value.label || 'Untitled' }
-  if (kind.value === 'place') return { to: '/places', label: 'Places' }
+  if (category.value) return { to: `/c/${category.value.id}`, label: category.value.name }
   if (kind.value === 'relation') return { to: '/relations', label: 'Relations' }
-  if (kind.value === 'person') return { to: '/people', label: 'People' }
   return { to: '/pads', label: 'Pads' }
 })
 
@@ -200,16 +201,17 @@ function moveTo() {
   })
 }
 
-async function convertToHub(k: 'place' | 'person') {
-  try {
-    const hub = await api.convertToHub(props.id, k)
-    if (hub !== props.id) {
-      toast(`“${titleLabel.value}” is now a ${k}; the line links to it`)
-      void router.push(`/n/${hub}`)
-    }
-  } catch (e) {
-    reportError(e)
-  }
+function chooseKind() {
+  if (node.value) chooseCategory(props.id, titleLabel.value, node.value.category)
+}
+
+function acceptSuggestion() {
+  const c = suggested.value
+  if (!c) return
+  api
+    .setCategory(props.id, c.id)
+    .then(() => toast(`“${titleLabel.value}” is in ${c.name}`))
+    .catch(reportError)
 }
 
 /** Page menu for one of your relations: rename, merge, stop using it. */
@@ -273,28 +275,18 @@ function openMenu() {
   if (!node.value) return
   if (isRelation.value) return openRelationMenu()
   const actions: SheetAction[] = [{ label: 'Show graph', icon: 'graph', run: () => router.push(`/n/${props.id}/graph`) }]
-  if (kind.value === 'item') {
+  if (kind.value === 'item' || kind.value === 'place' || kind.value === 'person') {
     actions.push(
       { label: 'Move to…', icon: 'move', run: moveTo },
-      { label: 'Turn into a place', icon: 'pin', run: () => void convertToHub('place') },
-      { label: 'Turn into a person', icon: 'person', run: () => void convertToHub('person') },
+      category.value
+        ? { label: `Change kind (${category.value.name})…`, icon: category.value.icon, run: chooseKind }
+        : { label: 'Make it a context…', icon: 'grid', run: chooseKind },
     )
-  } else if (kind.value === 'place' || kind.value === 'person') {
-    const other = kind.value === 'place' ? 'person' : 'place'
-    actions.push({
-      label: `Make it a ${other}`,
-      icon: other === 'place' ? 'pin' : 'person',
-      run: () => void api.setKind(props.id, other).catch(reportError),
-    })
-    if (parent.value) {
-      // Lives inside a list (made by an older version): let it be a plain item again.
-      actions.push({ label: 'Make it a plain item', icon: 'dot', run: () => void api.setKind(props.id, 'item').catch(reportError) })
-    }
   } else {
     actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })
   }
   const n = node.value
-  if (kind.value === 'item') {
+  if (kind.value === 'item' && !isHub.value) {
     actions.push({
       label: n.task ? 'Remove the checkbox' : 'Add a checkbox',
       icon: n.task ? 'dot' : 'checkbox',
@@ -362,12 +354,22 @@ onMounted(async () => {
       </div>
 
       <div class="title-block" :class="[`kind-${kind}`, { done: node.done }]">
-        <span v-if="kind !== 'item'" class="kind-tag" :class="`kind-${kind}`">
+        <button
+          v-if="category"
+          type="button"
+          class="kind-tag"
+          :class="`tone-${category.tone}`"
+          :aria-label="`${category.name}: change kind`"
+          @click="chooseKind"
+        >
+          <Icon :name="category.icon" :size="15" />{{ category.name }}
+        </button>
+        <span v-else-if="kind !== 'item' && kind !== 'place' && kind !== 'person'" class="kind-tag" :class="`kind-${kind}`">
           <KindIcon :kind="kind" :size="15" />{{ KIND_NAMES[kind] }}
         </span>
         <div class="title-row">
           <button
-            v-if="kind === 'item' && node.task"
+            v-if="kind === 'item' && node.task && !isHub"
             type="button"
             class="check big"
             role="checkbox"
@@ -397,6 +399,14 @@ onMounted(async () => {
             @chip="(cid) => router.push(`/n/${cid}`)"
           />
         </div>
+      </div>
+
+      <div v-if="suggested && !node.deleted" class="context-suggestion">
+        <span>Looks like one of your {{ suggested.name }}.</span>
+        <button type="button" class="btn btn-small" @click="acceptSuggestion">
+          <Icon :name="suggested.icon" :size="16" /> Add to {{ suggested.name }}
+        </button>
+        <button type="button" class="link-btn" @click="chooseKind">Another kind…</button>
       </div>
 
       <template v-if="isRelation && !node.deleted">

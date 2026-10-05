@@ -29,7 +29,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
 <template>
   <div
     class="row"
-    :class="{ active, done: node.done, task: node.task, numbered: row.numbered, [`kind-${node.kind}`]: true }"
+    :class="{ active, done: node.done, task: node.task, numbered: row.numbered, [`kind-${node.kind}`]: true, context: !!node.category }"
     :style="{ '--depth': row.depth }"
     :data-id="node.id"
   >
@@ -53,7 +53,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
       @mousedown.prevent
     >
       <span v-if="row.numbered" class="num">{{ row.index + 1 }}.</span>
-      <KindIcon v-else-if="node.kind === 'place' || node.kind === 'person'" :kind="node.kind" :size="16" />
+      <KindIcon v-else-if="node.category" :kind="node.kind" :category="node.category" :size="16" />
       <span v-else class="dot" />
     </RouterLink>
     <button

@@ -29,6 +29,20 @@
   --hl-pad: #e2dcf6;
   --hl-pad-ink: #483c8c;
 
+  /* Colours of kinds of context: 0 Places (green), 1 People (pink), 2–5 your own. */
+  --hl-t0: var(--hl-place);
+  --hl-t0-ink: var(--hl-place-ink);
+  --hl-t1: var(--hl-person);
+  --hl-t1-ink: var(--hl-person-ink);
+  --hl-t2: #ffe3a3;
+  --hl-t2-ink: #6e4600;
+  --hl-t3: #bfe8e4;
+  --hl-t3-ink: #0e5450;
+  --hl-t4: #ffd5c6;
+  --hl-t4-ink: #8a3013;
+  --hl-t5: #dcefb9;
+  --hl-t5-ink: #3c560c;
+
   --font: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible', system-ui, sans-serif;
   --grid-step: 20px;
   --indent: 22px;
@@ -69,6 +83,14 @@
     --hl-person-ink: #ffc6e1;
     --hl-pad: rgba(180, 160, 255, 0.24);
     --hl-pad-ink: #d9d0ff;
+    --hl-t2: rgba(255, 200, 90, 0.24);
+    --hl-t2-ink: #ffdb94;
+    --hl-t3: rgba(90, 210, 200, 0.24);
+    --hl-t3-ink: #a6eee7;
+    --hl-t4: rgba(255, 150, 120, 0.24);
+    --hl-t4-ink: #ffc4ae;
+    --hl-t5: rgba(170, 220, 90, 0.24);
+    --hl-t5-ink: #d2f2a0;
 
     color-scheme: dark;
   }
@@ -1710,3 +1732,160 @@ body:has(.edit-toolbar) .toasts {
   margin: 0;
   padding: 2px 0;
 }
+
+/* More than five tabs: tighter labels. */
+.bottom-nav.crowded .nav-tab {
+  font-size: 11px;
+  letter-spacing: -0.01em;
+}
+
+.nav-label {
+  max-width: 100%;
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ contexts */
+
+.page-title .title-icon {
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.pin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.pin-toggle[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.suggest-btn {
+  white-space: nowrap;
+}
+
+.context-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.kind-tag[role='button'] {
+  cursor: pointer;
+}
+
+/* Kinds of context: chips, icons, bullets, tags and graph nodes take the kind’s colour. */
+.chip-tone-0,
+.kind-tag.tone-0 {
+  background: var(--hl-t0);
+  color: var(--hl-t0-ink);
+}
+
+.kind-icon.tone-0,
+.row.tone-0 .bullet {
+  color: var(--hl-t0-ink);
+}
+
+.gnode.tone-0 .disc {
+  fill: var(--hl-t0);
+  stroke: var(--hl-t0-ink);
+}
+
+.chip-tone-1,
+.kind-tag.tone-1 {
+  background: var(--hl-t1);
+  color: var(--hl-t1-ink);
+}
+
+.kind-icon.tone-1,
+.row.tone-1 .bullet {
+  color: var(--hl-t1-ink);
+}
+
+.gnode.tone-1 .disc {
+  fill: var(--hl-t1);
+  stroke: var(--hl-t1-ink);
+}
+
+.chip-tone-2,
+.kind-tag.tone-2 {
+  background: var(--hl-t2);
+  color: var(--hl-t2-ink);
+}
+
+.kind-icon.tone-2,
+.row.tone-2 .bullet {
+  color: var(--hl-t2-ink);
+}
+
+.gnode.tone-2 .disc {
+  fill: var(--hl-t2);
+  stroke: var(--hl-t2-ink);
+}
+
+.chip-tone-3,
+.kind-tag.tone-3 {
+  background: var(--hl-t3);
+  color: var(--hl-t3-ink);
+}
+
+.kind-icon.tone-3,
+.row.tone-3 .bullet {
+  color: var(--hl-t3-ink);
+}
+
+.gnode.tone-3 .disc {
+  fill: var(--hl-t3);
+  stroke: var(--hl-t3-ink);
+}
+
+.chip-tone-4,
+.kind-tag.tone-4 {
+  background: var(--hl-t4);
+  color: var(--hl-t4-ink);
+}
+
+.kind-icon.tone-4,
+.row.tone-4 .bullet {
+  color: var(--hl-t4-ink);
+}
+
+.gnode.tone-4 .disc {
+  fill: var(--hl-t4);
+  stroke: var(--hl-t4-ink);
+}
+
+.chip-tone-5,
+.kind-tag.tone-5 {
+  background: var(--hl-t5);
+  color: var(--hl-t5-ink);
+}
+
+.kind-icon.tone-5,
+.row.tone-5 .bullet {
+  color: var(--hl-t5-ink);
+}
+
+.gnode.tone-5 .disc {
+  fill: var(--hl-t5);
+  stroke: var(--hl-t5-ink);
+}
+

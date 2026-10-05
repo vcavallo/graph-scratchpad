@@ -17,7 +17,8 @@ export function chipLabel(ref: RefInfo | undefined): string {
 }
 
 export function chipClass(ref: RefInfo | undefined): string {
-  const c = ['chip', `chip-${ref?.kind ?? 'item'}`]
+  // Contexts take their kind’s colour; everything else is coloured by node kind.
+  const c = ['chip', ref?.tone != null ? `chip-tone-${ref.tone}` : `chip-${ref?.kind ?? 'item'}`]
   if (ref?.deleted) c.push('chip-deleted')
   if (ref?.done) c.push('chip-done')
   return c.join(' ')

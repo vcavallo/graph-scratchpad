@@ -34,6 +34,7 @@ export function newNode(id: string, init: { text?: string; task?: boolean; done?
     numbered: false,
     task,
     links: 0,
+    category: null,
     children: [],
   }
 }

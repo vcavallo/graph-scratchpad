@@ -159,6 +159,31 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
       END;
     `,
   },
+  {
+    // Kinds of context. A 'category' node is a kind (Places, Rooms…), with its
+    // settings in props (JSON: icon, pinned, tone); nodes.category says what
+    // kind of context a node is. Places and People exist from the start, with
+    // fixed ids and clock '0' (like the welcome pad), so every device has the
+    // same two and none of them sends its own copy.
+    version: 9,
+    sql: `
+      ALTER TABLE nodes ADD COLUMN category TEXT;
+      ALTER TABLE nodes ADD COLUMN props TEXT;
+      CREATE TRIGGER sync_nodes_category AFTER UPDATE OF category ON nodes WHEN old.category IS NOT new.category BEGIN
+        INSERT OR REPLACE INTO sync_clock (node, field, hlc, local) VALUES (new.id, 'category', hlc_now(), 1);
+      END;
+      CREATE TRIGGER sync_nodes_props AFTER UPDATE OF props ON nodes WHEN old.props IS NOT new.props BEGIN
+        INSERT OR REPLACE INTO sync_clock (node, field, hlc, local) VALUES (new.id, 'props', hlc_now(), 1);
+      END;
+      INSERT OR IGNORE INTO nodes (id, kind, text, created_at, updated_at, props) VALUES
+        ('00000000-0000-4000-8000-0000000c0001', 'category', 'Places', 0, 0, '{"icon":"pin","pinned":true,"tone":0}'),
+        ('00000000-0000-4000-8000-0000000c0002', 'category', 'People', 0, 0, '{"icon":"person","pinned":false,"tone":1}');
+      INSERT OR REPLACE INTO sync_clock (node, field, hlc, local)
+        SELECT n.id, f.value, '0', 0 FROM nodes n,
+          json_each('["kind","text","done","collapsed","deleted_at","numbered","task","purged","pos","created_at","category","props"]') f
+        WHERE n.id IN ('00000000-0000-4000-8000-0000000c0001', '00000000-0000-4000-8000-0000000c0002');
+    `,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

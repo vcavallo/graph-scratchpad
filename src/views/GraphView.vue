@@ -25,7 +25,8 @@ import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
 import { api } from '@/db/api'
 import type { GraphNode, Kind, Neighborhood } from '@/db/types'
-import { KIND_NAMES } from '@/lib/kinds'
+import { KIND_NAMES, singular } from '@/lib/kinds'
+import { categoryById } from '@/state/categories'
 import { reportError } from '@/state/ui'
 
 const props = defineProps<{ id: string }>()
@@ -113,7 +114,7 @@ function forceOrdered(strength = 0.35) {
 }
 const ordered = forceOrdered()
 
-const RADIUS: Record<Kind, number> = { pad: 13, item: 8, place: 12, person: 12, relation: 10 }
+const RADIUS: Record<Kind, number> = { pad: 13, item: 8, place: 12, person: 12, relation: 10, category: 12 }
 const CHAR_W = 6.8
 
 const hops = ref(2)
@@ -283,7 +284,7 @@ function render() {
     .attr(
       'class',
       (n) =>
-        `gnode kind-${n.kind}${n.id === focusId.value ? ' center' : ''}${n.task ? ' task' : ''}${n.done ? ' done' : ''}${n.order !== null ? ' ordered' : ''}`,
+        `gnode kind-${n.kind}${n.tone != null ? ` tone-${n.tone}` : ''}${n.id === focusId.value ? ' center' : ''}${n.task ? ' task' : ''}${n.done ? ' done' : ''}${n.order !== null ? ' ordered' : ''}`,
     )
     .attr('aria-label', (n) => n.label || 'Untitled')
   nodes.select('circle.hit').attr('r', (n) => n.r + 12)
@@ -508,11 +509,21 @@ onBeforeUnmount(() => {
         <Icon name="fit" />
       </button>
       <div v-if="focus" class="focus-card" :class="`kind-${focus.kind}`">
-        <KindIcon :kind="focus.kind" />
+        <KindIcon :kind="focus.kind" :category="focus.category" />
         <div class="focus-text">
           <span class="focus-label">{{ focus.label || 'Untitled' }}</span>
           <span class="focus-meta">
-            {{ focus.kind === 'item' ? (focus.task ? (focus.done ? 'Done' : 'To-do') : 'Note') : KIND_NAMES[focus.kind] }},
+            {{
+              categoryById(focus.category)
+                ? singular(categoryById(focus.category)!.name)
+                : focus.kind === 'item'
+                  ? focus.task
+                    ? focus.done
+                      ? 'Done'
+                      : 'To-do'
+                    : 'Note'
+                  : KIND_NAMES[focus.kind]
+            }},
             {{ data!.nodes.length - 1 }} nearby{{ data?.truncated ? ' (nearest 150)' : '' }}
           </span>
         </div>
