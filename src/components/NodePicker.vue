@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Full-screen picker. Link mode: search, tap a result to pick it. Move mode:
-// browse like folders (tapping a row opens it; search results open too) and
-// confirm with "Move into …", so nothing moves by surprise.
+// Full-screen picker. Link mode: search, tap a result to pick it. Move and
+// send modes: browse like folders (tapping a row opens it; search results
+// open too) and confirm with "Move into …" / "Send to …", so nothing happens
+// by surprise.
 
 import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
@@ -26,7 +27,8 @@ let browseSeq = 0
 
 const req = pickerState
 const trimmed = computed(() => q.value.trim())
-const isMove = computed(() => req.value?.mode === 'move')
+const isMove = computed(() => req.value?.mode === 'move' || req.value?.mode === 'send')
+const isSend = computed(() => req.value?.mode === 'send')
 const browsing = computed(() => isMove.value && !trimmed.value)
 const excluded = computed(() => new Set(req.value?.excludeIds ?? []))
 const here = computed(() => trail.value.at(-1) ?? null)
@@ -60,7 +62,7 @@ watch(req, async (r) => {
   highlight.value = 0
   trail.value = []
   rows.value = []
-  if (r.mode === 'move') {
+  if (r.mode === 'move' || r.mode === 'send') {
     // Start next to the node being moved: its siblings are the likeliest targets.
     if (r.startNear) {
       try {
@@ -221,8 +223,8 @@ function onKey(e: KeyboardEvent) {
           </template>
         </nav>
         <button v-if="here" type="button" class="btn btn-primary picker-here" @click="moveHere">
-          <Icon name="move" :size="18" />
-          <span class="picker-here-label">Move into “{{ here.label || 'Untitled' }}”</span>
+          <Icon :name="isSend ? 'share' : 'move'" :size="18" />
+          <span class="picker-here-label">{{ isSend ? 'Send to' : 'Move into' }} “{{ here.label || 'Untitled' }}”</span>
         </button>
         <ul class="picker-results" role="listbox">
           <li v-for="r in rows" :key="r.id">
@@ -236,14 +238,14 @@ function onKey(e: KeyboardEvent) {
               <KindIcon :kind="r.kind" />
               <span class="picker-text">
                 <span class="picker-label">{{ r.label || 'Untitled' }}</span>
-                <span v-if="excluded.has(r.id)" class="picker-context">The item you’re moving</span>
+                <span v-if="excluded.has(r.id)" class="picker-context">The item you’re {{ isSend ? 'sending' : 'moving' }}</span>
               </span>
               <span v-if="r.childCount && !excluded.has(r.id)" class="picker-count">{{ r.childCount }}</span>
               <Icon v-if="!excluded.has(r.id)" name="chevron-right" :size="18" />
             </button>
           </li>
           <li v-if="!browseLoading && !rows.length" class="picker-empty">
-            {{ here ? 'Nothing inside yet. Move it here to start a list.' : 'No pads yet.' }}
+            {{ here ? `Nothing inside yet. ${isSend ? 'Send' : 'Move'} it here to start a list.` : 'No pads yet.' }}
           </li>
         </ul>
       </template>

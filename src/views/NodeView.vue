@@ -9,6 +9,7 @@ import { pickRelation } from '@/lib/relationActions'
 import { NO_RELATION_ID } from '@/db/types'
 import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
+import { sendActions } from '@/lib/sendTo'
 import EditToolbar from '@/components/EditToolbar.vue'
 import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
@@ -279,6 +280,7 @@ function openMenu() {
   if (kind.value === 'item' || kind.value === 'place' || kind.value === 'person') {
     actions.push(
       { label: 'Move to…', icon: 'move', run: moveTo },
+      ...sendActions({ id: props.id, label: titleLabel.value }, data.value ? subtreeIds(data.value.tree) : [props.id]),
       category.value
         ? { label: `Change kind (${category.value.name})…`, icon: category.value.icon, run: chooseKind }
         : { label: 'Make it a context…', icon: 'grid', run: chooseKind },

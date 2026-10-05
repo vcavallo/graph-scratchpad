@@ -30,6 +30,18 @@ export const prefs = {
   set persistAsked(v: boolean) {
     write('gs.persistAsked', v ? '1' : null)
   },
+  /** The list "Send to…" last sent something to, offered first next time. */
+  get lastSendTo(): { id: string; label: string } | null {
+    try {
+      const v = JSON.parse(read('gs.lastSendTo') ?? 'null')
+      return v && typeof v.id === 'string' ? { id: v.id, label: String(v.label ?? '') } : null
+    } catch {
+      return null
+    }
+  },
+  set lastSendTo(v: { id: string; label: string } | null) {
+    write('gs.lastSendTo', v ? JSON.stringify(v) : null)
+  },
   get showDoneBacklinks(): boolean {
     return read('gs.showDoneBacklinks') === '1'
   },

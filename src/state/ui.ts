@@ -101,7 +101,7 @@ export interface PickResult {
 }
 
 export interface PickerRequest {
-  mode: 'link' | 'move'
+  mode: 'link' | 'move' | 'send'
   title: string
   placeholder?: string
   excludeIds?: string[]
