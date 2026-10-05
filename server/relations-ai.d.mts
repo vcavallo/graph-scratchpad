@@ -10,9 +10,14 @@ export interface LabelItem {
   linked: string
   under?: string
 }
+export interface Vocabulary {
+  relations: string[]
+  sameAs: Record<string, string>
+  notRelations: string[]
+}
 export type Classifier = (
   items: LabelItem[],
-  vocabulary: string[],
+  vocabulary: Vocabulary,
 ) => Promise<{ labels: { id: string; relation: string | null }[]; usage?: { input_tokens: number; output_tokens: number } }>
 
 export class RelationLabeler {
@@ -26,7 +31,7 @@ export class RelationLabeler {
   schedule(ms?: number): void
   run(): Promise<void>
   pending(limit?: number): { src: string; dst: string; text: string; h: string }[]
-  vocabulary(max?: number): string[]
+  vocabulary(max?: number): Vocabulary
   stats(): Record<string, unknown>
 }
 

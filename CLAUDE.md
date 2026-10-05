@@ -27,7 +27,7 @@ Core insight: **the outline already is a graph.** Nesting is a `child` edge from
 ```sql
 CREATE TABLE nodes (
   id          TEXT PRIMARY KEY,          -- uuid
-  kind        TEXT NOT NULL DEFAULT 'item',  -- 'pad' | 'item' | 'place' | 'person'
+  kind        TEXT NOT NULL DEFAULT 'item',  -- 'pad' | 'item' | 'place' | 'person' | 'relation'
   text        TEXT NOT NULL DEFAULT '',  -- may contain [[uuid]] link tokens
   done        INTEGER NOT NULL DEFAULT 0,
   collapsed   INTEGER NOT NULL DEFAULT 0,
@@ -65,7 +65,7 @@ Conventions within the model:
 - Soft deletes share one `deleted_at` per batch; `restoreSubtree` revives exactly that batch (and the parent's batch, if the parent is deleted too).
 - `meta` keys: `schema_version`, `inbox_id` (the pad that "create new item" in the link picker files into), `seeded` (welcome pad created once), and for sync `device_id`, `sync_enabled`, `sync_cursor`, `sync_epoch`, `sync_schema`.
 - Migration 5 adds `sync_clock` (per node and field: clock time of the last change, and whether it's unsent) with triggers on `nodes` and child `edges`, and `nodes.purged` (emptied from the trash; the row stays as a tombstone). Clock '0' marks the untouched welcome pad (never sent unless edited, dropped when joining a server that has data); '' marks a field not yet received. Sibling ties on sort key break by node id, the same on every device.
-- Migration 6 adds `edges.phrase`: what a link means ("buy at", "waiting on"), guessed from the words before and after its token (`src/lib/relations.ts`) every time links are reconciled. Derived like link edges, so not synced; bumping `PHRASES_VERSION` recomputes them on next start. This is step 1 of emergent typed connections; step 2 (done) refines them with Claude Haiku on the server: migration 7 adds `nodes.rels`, a server-written synced field `{ linkedId: { r, h } }` used while `h` matches `textHash(text)` (src/lib/textHash.ts must match server/relations-ai.mjs). Step 3 is a Relations screen to confirm, merge and rename them. The API key lives only in a file on the Pi; never print, copy or commit it (the GitHub repo is public).
+- Migration 6 adds `edges.phrase`: what a link means ("buy at", "waiting on"), guessed from the words before and after its token (`src/lib/relations.ts`) every time links are reconciled. Derived like link edges, so not synced; bumping `PHRASES_VERSION` recomputes them on next start. This is step 1 of emergent typed connections; step 2 (done) refines them with Claude Haiku on the server: migration 7 adds `nodes.rels`, a server-written synced field `{ linkedId: { r, h } }` used while `h` matches `textHash(text)` (src/lib/textHash.ts must match server/relations-ai.mjs). Step 3 (done): your vocabulary is nodes of kind `relation` (text = name, child lines = other wordings); `NO_RELATION_ID` is a fixed-id relation whose wordings mean "not a relation". Migration 8 adds `nodes.link_rels` (synced, `{ linkedId: relationId }`) for links you labelled by hand. What a link shows is resolved when read (`#vocab` / `#resolve` in store.ts): pinned relation, else the relation whose name or wording matches the suggestion, else the suggestion. Relations and their wordings are left out of search unless `kinds` asks for them. The API key lives only in a file on the Pi; never print, copy or commit it (the GitHub repo is public).
 
 ## Code conventions
 

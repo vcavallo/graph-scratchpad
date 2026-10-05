@@ -8,6 +8,7 @@ import { textHash } from '../lib/textHash'
 import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
+  NO_RELATION_ID,
   type Backlink,
   type Crumb,
   type DeletedEntry,
@@ -25,6 +26,8 @@ import {
   type RawEdge,
   type RawNode,
   type RefInfo,
+  type RelationLink,
+  type RelationsData,
   type SearchOptions,
   type SearchResult,
   type SyncChange,
@@ -91,6 +94,12 @@ function cleanLabel(s: string): string {
   return s.replace(/\s+/g, ' ').trim()
 }
 
+/** How phrases are compared: "Buy  At" is "buy at". */
+const normPhrase = (s: string) => cleanLabel(s).toLowerCase()
+
+/** Your relations, for resolving labels: phrase → relation id, and relation id → name. */
+type Vocab = { byPhrase: Map<string, string>; names: Map<string, string> }
+
 /**
  * Sibling order: by sort key, then by node id. (Two devices can pick the same
  * key for different nodes; the node id breaks the tie the same way on both.)
@@ -116,6 +125,8 @@ const SYNC_COLUMNS: Record<string, (v: unknown) => string | number | null> = {
   created_at: (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0),
   // Server-written link labels (see migration 7); kept as JSON text.
   rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : null),
+  // Relations you chose for single links (migration 8).
+  link_rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? JSON.stringify(v) : null),
 }
 const SYNC_FIELDS = new Set([...Object.keys(SYNC_COLUMNS), 'pos'])
 
@@ -279,7 +290,7 @@ export class Store {
     const near = neighbourId ? this.#raw(neighbourId) : undefined
     if (near?.kind === 'item') return near.task === 1
     const parent = this.#raw(parentId)
-    return !(parent && (parent.kind === 'place' || parent.kind === 'person'))
+    return !(parent && (parent.kind === 'place' || parent.kind === 'person' || parent.kind === 'relation'))
   }
 
   #insertChildEdge(parentId: string, childId: string, key: string): void {
@@ -965,7 +976,13 @@ export class Store {
        WHERE e.dst = ? AND e.type = 'link' AND s.deleted_at IS NULL`,
       [id],
     )
-    const out = rows.map((r) => ({ source: toInfo(r), phrase: r.phrase, crumbs: this.getAncestors(r.id) }))
+    const vocab = this.#vocab()
+    const out: Backlink[] = rows.map((r) => ({
+      source: toInfo(r),
+      suggested: r.phrase,
+      ...this.#resolve(vocab, r.phrase, this.#linkRels(r.id)[id]),
+      crumbs: this.getAncestors(r.id),
+    }))
     const pathOf = (b: Backlink) => b.crumbs.map((c) => c.label).join('\u0000').toLowerCase()
     // Open to-dos, then plain mentions, then finished to-dos.
     const rank = (b: Backlink) => (b.source.done ? 2 : b.source.task ? 0 : 1)
@@ -999,13 +1016,17 @@ export class Store {
     // Order outgoing links by their position in the text.
     const order = parseTokens(raw.text)
     outgoingIds.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+    const relationLinks = raw.kind === 'relation' ? this.getRelationLinks({ relationId: id }) : []
+    for (const l of relationLinks) for (const tok of parseTokens(l.source.text)) tokenIds.add(tok)
+    const allRefs = relationLinks.length ? this.getRefs([...tokenIds]) : refs
     return {
       node: toInfo(raw),
       ancestors: this.getAncestors(id),
       tree,
-      refs,
+      refs: allRefs,
       outgoing: outgoingIds.map((o) => refs[o]),
       backlinks,
+      relationLinks,
     }
   }
 
@@ -1107,9 +1128,14 @@ export class Store {
     const kinds = opts.kinds ? new Set(opts.kinds) : null
     const q = query.trim()
     const scored: { r: RawNode; label: string; score: number }[] = []
+    // Relations and the ways you write them are vocabulary, not things to link to; only listed when asked for.
+    const relationIds = new Set(all.filter((r) => r.kind === 'relation').map((r) => r.id))
+    const wantRelations = !!kinds?.has('relation')
     for (const r of all) {
       if (r.deleted_at !== null || exclude.has(r.id)) continue
       if (kinds && !kinds.has(r.kind)) continue
+      if (!wantRelations && (relationIds.has(r.id) || relationIds.has(parentOf.get(r.id) ?? ''))) continue
+      if (r.id === NO_RELATION_ID) continue
       const label = res.label(r.id) ?? ''
       if (!label && q) continue
       let score: number
@@ -1172,7 +1198,12 @@ export class Store {
          AND src IN (SELECT value FROM json_each(?1)) AND dst IN (SELECT value FROM json_each(?1))`,
       [JSON.stringify(ids)],
     )
-    for (const e of edges) if (e.phrase == null) delete e.phrase // only links that say what they mean
+    // Links show your relation (or the suggestion); only links that say what they mean carry a phrase.
+    const vocab = this.#vocab()
+    for (const e of edges) {
+      if (e.type === 'link') e.phrase = this.#resolve(vocab, e.phrase ?? null, this.#linkRels(e.src)[e.dst]).phrase
+      if (e.phrase == null) delete e.phrase
+    }
     // Children of numbered lists carry their position, so the graph can lay them out in order.
     const numbered = new Set(
       this.db
@@ -1248,6 +1279,222 @@ export class Store {
     }
   }
 
+  // ------------------------------------------------------------ relations
+  //
+  // Your vocabulary of relations is ordinary nodes: kind 'relation', named by
+  // their text, with the other ways you write them as child lines. Links keep
+  // their suggested label (edges.phrase); what you see is resolved when read:
+  // a choice pinned on the link (nodes.link_rels), else the relation whose
+  // name or alias matches the suggestion, else the suggestion itself. So
+  // renames and merges apply everywhere at once, and sync is just nodes.
+
+  #vocab(): Vocab {
+    const names = new Map<string, string>()
+    const byPhrase = new Map<string, string>()
+    for (const r of this.db.all<{ id: string; text: string }>(
+      `SELECT id, text FROM nodes WHERE kind = 'relation' AND deleted_at IS NULL`,
+    )) {
+      names.set(r.id, cleanLabel(r.text))
+    }
+    for (const a of this.db.all<{ rel: string; text: string }>(
+      `SELECT e.src AS rel, c.text FROM edges e JOIN nodes c ON c.id = e.dst JOIN nodes r ON r.id = e.src
+       WHERE e.type = 'child' AND r.kind = 'relation' AND r.deleted_at IS NULL AND c.deleted_at IS NULL`,
+    )) {
+      const k = normPhrase(a.text)
+      if (k && !byPhrase.has(k)) byPhrase.set(k, a.rel)
+    }
+    // A relation's own name beats an alias that happens to match it.
+    for (const [id, name] of names) if (id !== NO_RELATION_ID && normPhrase(name)) byPhrase.set(normPhrase(name), id)
+    return { byPhrase, names }
+  }
+
+  #linkRels(id: string): Record<string, string> {
+    const raw = this.db.get<{ v: string | null }>('SELECT link_rels AS v FROM nodes WHERE id = ?', [id])?.v
+    try {
+      const v = raw ? JSON.parse(raw) : {}
+      return v && typeof v === 'object' ? v : {}
+    } catch {
+      return {}
+    }
+  }
+
+  /** What a link shows: your relation, or its suggestion, or nothing. */
+  #resolve(
+    vocab: Vocab,
+    suggested: string | null,
+    pinnedId: string | undefined,
+  ): { phrase: string | null; relationId: string | null; pinned: boolean } {
+    if (pinnedId && (pinnedId === NO_RELATION_ID || vocab.names.has(pinnedId))) {
+      return { phrase: pinnedId === NO_RELATION_ID ? null : vocab.names.get(pinnedId)!, relationId: pinnedId, pinned: true }
+    }
+    if (!suggested) return { phrase: null, relationId: null, pinned: false }
+    const rid = vocab.byPhrase.get(normPhrase(suggested))
+    if (rid === NO_RELATION_ID) return { phrase: null, relationId: NO_RELATION_ID, pinned: false }
+    if (rid) return { phrase: vocab.names.get(rid) ?? suggested, relationId: rid, pinned: false }
+    return { phrase: suggested, relationId: null, pinned: false }
+  }
+
+  /** Every live link (live source), with what it shows. */
+  #allLinks() {
+    const vocab = this.#vocab()
+    const pins = new Map<string, Record<string, string>>()
+    const rows = this.db.all<{ src: string; dst: string; phrase: string | null; link_rels: string | null }>(
+      `SELECT e.src, e.dst, e.phrase, s.link_rels FROM edges e JOIN nodes s ON s.id = e.src
+       WHERE e.type = 'link' AND s.deleted_at IS NULL`,
+    )
+    return rows.map((r) => {
+      if (!pins.has(r.src)) pins.set(r.src, r.link_rels ? this.#linkRels(r.src) : {})
+      return { src: r.src, dst: r.dst, suggested: r.phrase, ...this.#resolve(vocab, r.phrase, pins.get(r.src)![r.dst]) }
+    })
+  }
+
+  /** Your relations, the suggestions not yet kept, and the phrases you ruled out. */
+  listRelations(): RelationsData {
+    const links = this.#allLinks()
+    const counts = new Map<string, number>()
+    const suggestions = new Map<string, number>()
+    for (const l of links) {
+      if (l.relationId) counts.set(l.relationId, (counts.get(l.relationId) ?? 0) + 1)
+      else if (l.phrase) suggestions.set(l.phrase, (suggestions.get(l.phrase) ?? 0) + 1)
+    }
+    const aliasRows = this.db.all<{ rel: string; id: string; text: string }>(
+      `SELECT e.src AS rel, c.id, c.text FROM edges e JOIN nodes c ON c.id = e.dst
+       WHERE e.type = 'child' AND c.deleted_at IS NULL AND e.src IN (SELECT id FROM nodes WHERE kind = 'relation')
+       ORDER BY e.sort_key, c.id`,
+    )
+    const aliasesOf = (rel: string) => aliasRows.filter((a) => a.rel === rel && a.text.trim()).map(({ id, text }) => ({ id, text }))
+    const relations = this.db
+      .all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE kind = 'relation' AND deleted_at IS NULL`)
+      .filter((r) => r.id !== NO_RELATION_ID)
+      .map((r) => ({ id: r.id, name: cleanLabel(r.text), aliases: aliasesOf(r.id), count: counts.get(r.id) ?? 0 }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    return {
+      relations,
+      suggestions: [...suggestions]
+        .map(([phrase, count]) => ({ phrase, count }))
+        .sort((a, b) => b.count - a.count || a.phrase.localeCompare(b.phrase)),
+      ignored: aliasesOf(NO_RELATION_ID),
+    }
+  }
+
+  /** Every link labelled with a relation (or, for a suggestion, with that phrase). */
+  getRelationLinks(key: { relationId: string } | { phrase: string }): RelationLink[] {
+    const links = this.#allLinks().filter((l) =>
+      'relationId' in key ? l.relationId === key.relationId : !l.relationId && l.phrase === key.phrase,
+    )
+    const sources = this.#rawMany([...new Set(links.map((l) => l.src))])
+    const refs = this.getRefs([...new Set(links.map((l) => l.dst))])
+    return links
+      .filter((l) => sources.has(l.src))
+      .map((l) => ({ source: toInfo(sources.get(l.src)!), crumbs: this.getAncestors(l.src), target: refs[l.dst], pinned: l.pinned }))
+      .sort((a, b) => a.target.label.localeCompare(b.target.label) || Number(a.source.done) - Number(b.source.done))
+  }
+
+  #relationByName(name: string): string | undefined {
+    const k = normPhrase(name)
+    return this.db
+      .all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE kind = 'relation' AND deleted_at IS NULL`)
+      .find((r) => r.id !== NO_RELATION_ID && normPhrase(r.text) === k)?.id
+  }
+
+  #hasAlias(rel: string, phrase: string): boolean {
+    const k = normPhrase(phrase)
+    return this.getChildren(rel).some((c) => normPhrase(c.text) === k)
+  }
+
+  #addAlias(rel: string, phrase: string): void {
+    if (!normPhrase(phrase) || this.#hasAlias(rel, phrase)) return
+    this.createChild(rel, undefined, { text: cleanLabel(phrase).toLowerCase(), task: false })
+  }
+
+  /** Stop treating a phrase as something you ruled out. */
+  #unignore(phrase: string): void {
+    const k = normPhrase(phrase)
+    for (const c of this.getChildren(NO_RELATION_ID)) if (normPhrase(c.text) === k) this.deleteSubtree(c.id)
+  }
+
+  /**
+   * Keep a suggested phrase as one of your relations, named `name` (the phrase
+   * itself by default). An existing relation of that name gains the phrase as
+   * another way of writing it. Returns the relation's id.
+   */
+  keepRelation(phrase: string, name = phrase): string {
+    return this.db.tx(() => {
+      const label = cleanLabel(name).toLowerCase()
+      if (!label) throw new StoreError('A relation needs a name', 'empty')
+      this.#unignore(phrase)
+      const rel = this.#relationByName(label) ?? this.#insertNode('relation', label)
+      if (normPhrase(phrase) !== normPhrase(label)) this.#addAlias(rel, phrase)
+      return rel
+    })
+  }
+
+  /** Links worded like this are plain mentions. */
+  ignorePhrase(phrase: string): void {
+    this.db.tx(() => {
+      const none = this.#raw(NO_RELATION_ID)
+      if (!none) this.#insertNode('relation', 'Not a relation', null, NO_RELATION_ID)
+      else if (none.deleted_at !== null) this.db.exec('UPDATE nodes SET deleted_at = NULL WHERE id = ?', [NO_RELATION_ID])
+      this.#addAlias(NO_RELATION_ID, phrase)
+    })
+  }
+
+  /** Links worded like this get their suggested label again. */
+  unignorePhrase(phrase: string): void {
+    this.db.tx(() => this.#unignore(phrase))
+  }
+
+  /** Rename a relation; the old name keeps working. Renaming to another relation's name merges into it. */
+  renameRelation(id: string, name: string): string {
+    return this.db.tx(() => {
+      const r = this.#requireLive(id)
+      if (r.kind !== 'relation' || id === NO_RELATION_ID) throw new StoreError('Not a relation', 'not_relation')
+      const label = cleanLabel(name).toLowerCase()
+      if (!label) throw new StoreError('A relation needs a name', 'empty')
+      const other = this.#relationByName(label)
+      if (other && other !== id) return this.mergeRelation(id, other)
+      if (normPhrase(r.text) !== normPhrase(label)) {
+        this.#addAlias(id, r.text)
+        this.updateText(id, label)
+      }
+      return id
+    })
+  }
+
+  /** Fold one relation into another: its name and other wordings, and links pinned to it. */
+  mergeRelation(fromId: string, intoId: string): string {
+    return this.db.tx(() => {
+      const from = this.#requireLive(fromId)
+      const into = this.#requireLive(intoId)
+      if (from.kind !== 'relation' || into.kind !== 'relation') throw new StoreError('Not a relation', 'not_relation')
+      if (fromId === intoId) return intoId
+      for (const c of this.getChildren(fromId)) {
+        if (this.#hasAlias(intoId, c.text)) this.deleteSubtree(c.id)
+        else this.moveSubtree(c.id, intoId)
+      }
+      if (fromId !== NO_RELATION_ID) this.#addAlias(intoId, from.text)
+      for (const r of this.db.all<{ id: string }>(`SELECT id FROM nodes WHERE instr(link_rels, ?) > 0`, [fromId])) {
+        const pins = this.#linkRels(r.id)
+        for (const k of Object.keys(pins)) if (pins[k] === fromId) pins[k] = intoId
+        this.db.exec('UPDATE nodes SET link_rels = ? WHERE id = ?', [JSON.stringify(pins), r.id])
+      }
+      this.deleteSubtree(fromId)
+      return intoId
+    })
+  }
+
+  /** Choose the relation for one link (null: back to the usual label). */
+  setLinkRelation(srcId: string, dstId: string, relationId: string | null): void {
+    this.db.tx(() => {
+      this.#requireLive(srcId)
+      const pins = this.#linkRels(srcId)
+      if (relationId) pins[dstId] = relationId
+      else delete pins[dstId]
+      const v = Object.keys(pins).length ? JSON.stringify(pins) : null
+      this.db.exec('UPDATE nodes SET link_rels = ? WHERE id = ?', [v, srcId])
+    })
+  }
+
   // ------------------------------------------------------------------ sync
   //
   // Each node is a set of fields (see SYNC_COLUMNS, plus 'pos'), and each field
@@ -1274,6 +1521,7 @@ export class Store {
     const pe = this.#parentEdge(id)
     return {
       rels: this.#rels(id),
+      link_rels: this.#linkRels(id),
       kind: r.kind,
       text: r.text,
       done: r.done,

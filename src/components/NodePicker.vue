@@ -30,15 +30,21 @@ const browsing = computed(() => isMove.value && !trimmed.value)
 const excluded = computed(() => new Set(req.value?.excludeIds ?? []))
 const here = computed(() => trail.value.at(-1) ?? null)
 
+const CREATE_LABELS: Partial<Record<Kind, (t: string) => string>> = {
+  place: (t) => `New place “${t}”`,
+  person: (t) => `New person “${t}”`,
+  item: (t) => `New item “${t}” in Inbox`,
+  relation: (t) => `New relation “${t}”`,
+}
+
 const creates = computed(() => {
   if (!req.value?.allowCreate || !trimmed.value) return []
   const exact = results.value.some((r) => r.label.toLowerCase() === trimmed.value.toLowerCase())
   if (exact && results.value.length) return []
-  return [
-    { kind: 'place' as Kind, label: `New place “${trimmed.value}”` },
-    { kind: 'person' as Kind, label: `New person “${trimmed.value}”` },
-    { kind: 'item' as Kind, label: `New item “${trimmed.value}” in Inbox` },
-  ]
+  return (req.value.createKinds ?? (['place', 'person', 'item'] as Kind[])).map((kind) => ({
+    kind,
+    label: CREATE_LABELS[kind]?.(trimmed.value) ?? trimmed.value,
+  }))
 })
 
 watch(req, async (r) => {
@@ -114,7 +120,7 @@ async function search() {
     const res = await api.search(query, {
       limit: 30,
       excludeIds: r.excludeIds,
-      kinds: !query.trim() && r.emptyKinds ? r.emptyKinds : undefined,
+      kinds: r.kinds ?? (!query.trim() && r.emptyKinds ? r.emptyKinds : undefined),
     })
     if (my !== seq) return
     results.value = res
@@ -141,7 +147,7 @@ function moveHere() {
 }
 
 function create(kind: Kind) {
-  const text = trimmed.value
+  const text = kind === 'relation' ? trimmed.value.toLowerCase() : trimmed.value
   const id = crypto.randomUUID()
   const p = kind === 'item' ? api.createInInbox({ text, id }) : api.createNode(kind, text, id)
   p.catch(reportError)

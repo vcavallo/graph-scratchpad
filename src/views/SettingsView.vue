@@ -279,6 +279,15 @@ async function askPersist() {
     </section>
 
     <section class="card">
+      <h2 class="section-title">Relations</h2>
+      <RouterLink to="/relations" class="list-main row-link">
+        <Icon name="linked" :size="20" />
+        <span class="list-label">What your links mean</span>
+        <Icon name="chevron-right" :size="18" />
+      </RouterLink>
+    </section>
+
+    <section class="card">
       <h2 class="section-title">Trash</h2>
       <RouterLink to="/trash" class="list-main row-link">
         <Icon name="trashcan" :size="20" />

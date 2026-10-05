@@ -148,6 +148,17 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
     version: 7,
     sql: `ALTER TABLE nodes ADD COLUMN rels TEXT;`,
   },
+  {
+    // Relations you chose for single links: JSON { [linkedId]: relationId }.
+    // Your own edits, so it syncs like any field.
+    version: 8,
+    sql: `
+      ALTER TABLE nodes ADD COLUMN link_rels TEXT;
+      CREATE TRIGGER sync_nodes_link_rels AFTER UPDATE OF link_rels ON nodes WHEN old.link_rels IS NOT new.link_rels BEGIN
+        INSERT OR REPLACE INTO sync_clock (node, field, hlc, local) VALUES (new.id, 'link_rels', hlc_now(), 1);
+      END;
+    `,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

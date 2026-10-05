@@ -247,6 +247,28 @@ describe('sync', () => {
     expect(dump(b.s)).toEqual(dump(phone))
   })
 
+  it('carries your relations and the relations you chose for single links', async () => {
+    const server = makeServer()
+    const a = await device(server)
+    const b = await device(server)
+    const pad = a.s.createPad('P')
+    const shop = a.s.createNode('place', 'Shop')
+    const x = a.s.createChild(pad, undefined, { text: `Pick up tape at ${makeToken(shop)}` })
+    const y = a.s.createChild(pad, undefined, { text: `Get mulch from ${makeToken(shop)}` })
+    await settle(a, b)
+    const buy = b.s.keepRelation('pick up at', 'buy at')
+    a.s.ignorePhrase('get from')
+    await settle(a, b)
+    a.s.setLinkRelation(y, shop, buy)
+    await settle(a, b)
+    for (const d of [a, b]) {
+      expect(d.s.getBacklinks(shop).map((l) => [l.source.id, l.phrase, l.pinned]).sort()).toEqual(
+        [[x, 'buy at', false], [y, 'buy at', true]].sort(),
+      )
+    }
+    expect(dump(a.s)).toEqual(dump(b.s))
+  })
+
   it('fills a new or reset server from the devices', async () => {
     const server = makeServer()
     const a = await device(server)

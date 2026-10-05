@@ -6,19 +6,37 @@ import KindIcon from './KindIcon.vue'
 import TextView from './TextView.vue'
 import type { Backlink } from '@/db/types'
 import { prefs } from '@/state/prefs'
+import { openLabelSheet } from '@/lib/relationActions'
 
-const props = defineProps<{ backlinks: Backlink[]; heading: string }>()
+const props = defineProps<{ backlinks: Backlink[]; heading: string; target: string }>()
 const emit = defineEmits<{ toggle: [id: string, done: boolean] }>()
 const router = useRouter()
 
 // What the links say they are ("buy at", "waiting on"), most used first; '' is "no relation".
+// Your relations count together however each line was worded.
 const relations = computed(() => {
-  const counts = new Map<string, number>()
-  for (const b of props.backlinks) counts.set(b.phrase ?? '', (counts.get(b.phrase ?? '') ?? 0) + 1)
-  return [...counts]
-    .map(([phrase, count]) => ({ phrase, count }))
-    .sort((a, b) => b.count - a.count || (a.phrase === '' ? 1 : b.phrase === '' ? -1 : a.phrase.localeCompare(b.phrase)))
+  const groups = new Map<string, { phrase: string; count: number; relationId: string | null }>()
+  for (const b of props.backlinks) {
+    const k = b.phrase ?? ''
+    const g = groups.get(k) ?? { phrase: k, count: 0, relationId: null }
+    g.count++
+    if (b.relationId && !b.pinned) g.relationId = b.relationId
+    groups.set(k, g)
+  }
+  return [...groups.values()].sort(
+    (a, b) => b.count - a.count || (a.phrase === '' ? 1 : b.phrase === '' ? -1 : a.phrase.localeCompare(b.phrase)),
+  )
 })
+const active = computed(() => relations.value.find((r) => r.phrase === filter.value && r.phrase !== '') ?? null)
+
+function labelOptions(b: Backlink) {
+  openLabelSheet({
+    label: b.phrase,
+    suggested: b.suggested,
+    relationId: b.relationId,
+    link: { src: b.source.id, dst: props.target, pinned: b.pinned },
+  })
+}
 const picked = ref<string | null>(null)
 const filter = computed(() => (picked.value !== null && relations.value.some((r) => r.phrase === picked.value) ? picked.value : null))
 const shown = computed(() => (filter.value === null ? props.backlinks : props.backlinks.filter((b) => (b.phrase ?? '') === filter.value)))
@@ -69,6 +87,16 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
         {{ r.phrase || 'other' }} <span class="n">{{ r.count }}</span>
       </button>
     </div>
+    <div v-if="active" class="rel-bar">
+      <span>{{ active.relationId ? 'One of your relations' : 'Suggested from how these lines are worded' }}</span>
+      <button
+        type="button"
+        class="btn btn-small"
+        @click="openLabelSheet({ label: active.phrase, suggested: active.phrase, relationId: active.relationId })"
+      >
+        {{ active.relationId ? 'Options' : 'Keep or rename' }}
+      </button>
+    </div>
     <ul v-if="open.length" class="backlink-list">
       <li v-for="b in open" :key="b.source.id" class="backlink">
         <button
@@ -82,8 +110,16 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span class="box" />
         </button>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
-            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          <div class="crumbline">
+            <button
+              type="button"
+              class="rel"
+              :class="{ suggested: !b.relationId, pinned: b.pinned, empty: !b.phrase }"
+              :aria-label="b.phrase ? `Label: ${b.phrase}` : 'Add a label'"
+              @click.stop="labelOptions(b)"
+            >
+              {{ b.phrase ?? '+' }}</button
+            >{{ crumbText(b) }}
           </div>
           <TextView :text="b.source.text" />
         </div>
@@ -96,8 +132,16 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span v-else class="dot" />
         </span>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
-            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          <div class="crumbline">
+            <button
+              type="button"
+              class="rel"
+              :class="{ suggested: !b.relationId, pinned: b.pinned, empty: !b.phrase }"
+              :aria-label="b.phrase ? `Label: ${b.phrase}` : 'Add a label'"
+              @click.stop="labelOptions(b)"
+            >
+              {{ b.phrase ?? '+' }}</button
+            >{{ crumbText(b) }}
           </div>
           <TextView :text="b.source.text" />
         </div>
@@ -119,8 +163,16 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
           <span class="box"><Icon name="check" :size="15" :stroke="3" /></span>
         </button>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">
-          <div v-if="b.crumbs.length || b.phrase" class="crumbline">
-            <span v-if="b.phrase" class="rel">{{ b.phrase }}</span>{{ crumbText(b) }}
+          <div class="crumbline">
+            <button
+              type="button"
+              class="rel"
+              :class="{ suggested: !b.relationId, pinned: b.pinned, empty: !b.phrase }"
+              :aria-label="b.phrase ? `Label: ${b.phrase}` : 'Add a label'"
+              @click.stop="labelOptions(b)"
+            >
+              {{ b.phrase ?? '+' }}</button
+            >{{ crumbText(b) }}
           </div>
           <TextView :text="b.source.text" />
         </div>

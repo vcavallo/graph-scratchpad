@@ -53,18 +53,42 @@ export interface ConfirmRequest {
   message?: string
   confirmLabel: string
   danger?: boolean
-  resolve: (ok: boolean) => void
+  /** Ask for a line of text too (see promptDialog). */
+  input?: { value: string; placeholder?: string }
+  resolve: (ok: boolean, value?: string) => void
 }
 
 export const confirmState = shallowRef<ConfirmRequest | null>(null)
 
-export function confirmDialog(opts: Omit<ConfirmRequest, 'resolve'>): Promise<boolean> {
+export function confirmDialog(opts: Omit<ConfirmRequest, 'resolve' | 'input'>): Promise<boolean> {
   return new Promise((resolve) => {
     confirmState.value = {
       ...opts,
       resolve: (ok) => {
         confirmState.value = null
         resolve(ok)
+      },
+    }
+  })
+}
+
+/** Ask for a line of text. Resolves to the trimmed text, or null if cancelled or empty. */
+export function promptDialog(opts: {
+  title: string
+  message?: string
+  confirmLabel: string
+  value?: string
+  placeholder?: string
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    confirmState.value = {
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: opts.confirmLabel,
+      input: { value: opts.value ?? '', placeholder: opts.placeholder },
+      resolve: (ok, value) => {
+        confirmState.value = null
+        resolve(ok && value?.trim() ? value.trim() : null)
       },
     }
   })
@@ -83,6 +107,10 @@ export interface PickerRequest {
   excludeIds?: string[]
   /** Kinds to suggest when the query is empty. */
   emptyKinds?: Kind[]
+  /** Only these kinds, whatever the query. */
+  kinds?: Kind[]
+  /** What "New …" can create (default: place, person, item in the Inbox). */
+  createKinds?: Kind[]
   /** Move mode: start browsing among this node's siblings. */
   startNear?: string
   allowCreate?: boolean

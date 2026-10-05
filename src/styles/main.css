@@ -998,13 +998,51 @@ a {
   opacity: 0.75;
 }
 
+/* A link's label: solid when it's one of your relations, outlined when only suggested. */
 .crumbline .rel {
+  position: relative;
   margin-right: 6px;
   padding: 0 5px;
+  border: 1px solid var(--hl-place);
   border-radius: 4px;
   background: var(--hl-place);
   color: var(--hl-place-ink);
+  font: inherit;
   font-weight: 700;
+  line-height: 17px;
+}
+
+/* A bigger hit area than the label itself. */
+.crumbline .rel::before {
+  content: '';
+  position: absolute;
+  inset: -8px -6px;
+}
+
+.crumbline .rel.suggested {
+  border-style: dashed;
+  border-color: var(--hl-place-ink);
+  background: transparent;
+}
+
+.crumbline .rel.pinned::after {
+  content: ' •';
+}
+
+.crumbline .rel.empty {
+  border-color: var(--rule);
+  background: transparent;
+  color: var(--ink-faint);
+}
+
+.rel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -2px 0 10px;
+  color: var(--ink-soft);
+  font-size: 14px;
 }
 
 .backlink-mark {
@@ -1617,4 +1655,58 @@ body:has(.edit-toolbar) .toasts {
 
 .sync-line.error {
   color: var(--danger);
+}
+
+.dialog-input {
+  width: 100%;
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+}
+
+/* ------------------------------------------------------------ relations */
+
+.relations-page .note {
+  margin: 4px 0 8px;
+}
+
+.list-main[type='button'] {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}
+
+.suggested-label {
+  text-decoration: underline dashed var(--hl-place-ink);
+  text-underline-offset: 4px;
+}
+
+.muted-label {
+  color: var(--ink-soft);
+  font-weight: 550;
+}
+
+.rel-group {
+  margin-top: 14px;
+}
+
+.rel-group-head {
+  display: inline-block;
+  margin-bottom: 2px;
+  text-decoration: none;
+}
+
+.pin-note {
+  color: var(--hl-place-ink);
+  font-weight: 650;
+}
+
+.title.static-title {
+  margin: 0;
+  padding: 2px 0;
 }
