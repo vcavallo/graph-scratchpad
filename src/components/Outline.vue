@@ -228,7 +228,14 @@ function toggleTask(row: T.FlatRow) {
 }
 
 function onMarker(row: T.FlatRow, m: LineMarker) {
-  setTask(row.node, m.task, m.done)
+  if (m.numbered) numberListOf(row.node.id)
+  if (m.task !== undefined) setTask(row.node, m.task, m.done)
+}
+
+/** "1. " typed or pasted on a line: the list it's in becomes a numbered list. */
+function numberListOf(id: string) {
+  const parent = T.locate(local.value, id)?.parent
+  if (parent && !parent.numbered) setNumbered(parent, true)
 }
 
 function setChildrenTask(n: TreeNode, task: boolean) {
@@ -287,6 +294,7 @@ function pastedItems(lines: PastedLine[], task: boolean) {
 
 function onPasteLines(row: T.FlatRow, lines: PastedLine[]) {
   void getEditor(key(row.node.id))?.flush()
+  if (lines.some((l) => l.numbered)) numberListOf(row.node.id)
   const items = pastedItems(lines, T.taskFor(T.locate(local.value, row.node.id)?.parent ?? local.value, row.node))
   let after = row.node.id
   for (const it of items) {
@@ -422,6 +430,7 @@ function addChild(position: 'first' | 'last') {
 
 /** Lines pasted into the title become the first items, in order. */
 function addLines(lines: PastedLine[]) {
+  if (lines.some((l) => l.numbered) && !local.value.numbered) setNumbered(local.value, true)
   const items = pastedItems(lines, T.taskFor(local.value, local.value.children[0]))
   items.forEach((it, i) => {
     const node = T.newNode(it.id, it)

@@ -65,6 +65,20 @@ await sleep(100)
 assert(await hasCheck('butter'), 'typing "[] " makes a to-do')
 assert((await activeRowText(page)) === 'butter', 'and drops the brackets')
 
+// "1. " at the start of a line numbers the list it's in.
+await newPad('Steps')
+await page.keyboard.type('1. Unplug it')
+await sleep(300)
+assert((await activeRowText(page)) === 'Unplug it', 'the number itself is removed')
+await page.keyboard.press('Enter')
+await page.keyboard.type('Open the case')
+await sleep(300)
+const nums = await page.$$eval('.outline .row .bullet .num', (els) => els.map((e) => e.textContent))
+assert(JSON.stringify(nums) === JSON.stringify(['1.', '2.']), 'the list is numbered: ' + JSON.stringify(nums))
+await openPad('Groceries')
+await page.tap('.row:has-text("butter") .row-text')
+await page.keyboard.press('End')
+
 // Desktop shortcut: Ctrl+Shift+Enter switches; Ctrl+Enter still checks off.
 await page.keyboard.press('Control+Shift+Enter')
 await sleep(100)

@@ -67,6 +67,22 @@ describe('list markers', () => {
     expect(typedMarker('a - b')).toBeNull()
   })
 
+  it('reads "1. " and "1) " as numbering the list, where asked', () => {
+    expect(typedMarker('1. ', { numbers: true })).toEqual({ length: 3, done: false, numbered: true })
+    expect(typedMarker('12) step', { numbers: true })).toEqual({ length: 4, done: false, numbered: true })
+    expect(typedMarker('1. ')).toBeNull() // titles keep it as text
+    expect(typedMarker('1.5 inches', { numbers: true })).toBeNull()
+    expect(typedMarker('2026. ', { numbers: true })).toBeNull()
+  })
+
+  it('drops numbers from pasted lines and remembers they were numbered', () => {
+    expect(pasteLines('1. Unplug it\n2) Open the case\n3.5 inch screws')).toEqual([
+      { text: 'Unplug it', numbered: true },
+      { text: 'Open the case', numbered: true },
+      { text: '3.5 inch screws' },
+    ])
+  })
+
   it('keeps checkboxes from pasted lines and drops other markers', () => {
     expect(pasteLines('- [ ] milk\n- [x] eggs\n* bread\n\n  plain  \n[] jam')).toEqual([
       { text: 'milk', task: true, done: false },
