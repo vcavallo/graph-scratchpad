@@ -103,18 +103,28 @@ export type CaretTarget = number | 'start' | 'end'
 
 export type Shortcut = 'toggle-done' | 'toggle-task' | 'move-up' | 'move-down' | 'collapse' | 'expand'
 
-/** A line's to-do state, as written in Markdown: "[ ] …" / "[x] …" is a to-do, "- …" a plain bullet. */
+/**
+ * A line's kind, as written in Markdown: "[ ] …" / "[x] …" is a to-do, "- …" a
+ * plain bullet, "1. …" (or "1) …") a numbered list.
+ */
 export interface LineMarker {
-  task: boolean
+  /** To-do (true) or plain bullet (false); undefined leaves it as it is. */
+  task?: boolean
   done: boolean
+  /** Number the list the line is in. */
+  numbered?: boolean
 }
 
-const TYPED_MARKER = /^(?:\[([ xX]?)\]|[-*]) /
+const TYPED_MARKER = /^(?:\[([ xX]?)\]|[-*]|(\d{1,3})[.)]) /
 
-/** A marker typed at the very start of a line ("[] ", "[x] ", "- "): its length and meaning. */
-export function typedMarker(text: string): (LineMarker & { length: number }) | null {
+/**
+ * A marker typed at the very start of a line ("[] ", "[x] ", "- ", and with
+ * `numbers`, "1. " or "1) "): its length and meaning.
+ */
+export function typedMarker(text: string, opts: { numbers?: boolean } = {}): (LineMarker & { length: number }) | null {
   const m = TYPED_MARKER.exec(text)
   if (!m) return null
+  if (m[2] !== undefined) return opts.numbers ? { length: m[0].length, done: false, numbered: true } : null
   const box = m[1]
   return { length: m[0].length, task: box !== undefined, done: !!box && box.toLowerCase() === 'x' }
 }
@@ -199,19 +209,22 @@ export interface PastedLine {
   /** Set when the line had a checkbox ("[ ]" or "[x]"); otherwise it follows the line it's pasted after. */
   task?: boolean
   done?: boolean
+  /** It was numbered ("1. …"): the list it lands in becomes a numbered list. */
+  numbered?: boolean
 }
 
-/** Clean up pasted text into lines, dropping list markers like "- ", "* ", "[ ] " (but keeping checkboxes). */
+/** Clean up pasted text into lines, dropping list markers like "- ", "* ", "1. ", "[ ] " (but keeping checkboxes and numbering). */
 export function pasteLines(text: string): PastedLine[] {
   return text
     .replace(/\r\n?/g, '\n')
     .split('\n')
     .map((l) => {
-      const m = /^\s*(?:[-*•+]\s+)?(?:\[([ xX]?)\]\s+)?/.exec(l)!
+      const m = /^\s*(?:[-*•+]\s+|(\d{1,3})[.)]\s+)?(?:\[([ xX]?)\]\s+)?/.exec(l)!
       const line: PastedLine = { text: l.slice(m[0].length).trimEnd() }
-      if (m[1] !== undefined) {
+      if (m[1] !== undefined) line.numbered = true
+      if (m[2] !== undefined) {
         line.task = true
-        line.done = m[1].toLowerCase() === 'x'
+        line.done = m[2].toLowerCase() === 'x'
       }
       return line
     })

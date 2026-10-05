@@ -82,6 +82,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
       @at-trigger="(o) => emit('atTrigger', row, o)"
       @chip="(id) => emit('chip', id)"
       @paste-lines="(l) => emit('pasteLines', row, l)"
+      number-markers
       @marker="(m) => emit('marker', row, m)"
     />
     <span

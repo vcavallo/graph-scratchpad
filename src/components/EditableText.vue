@@ -33,8 +33,10 @@ const props = withDefaults(
     placeholder?: string
     label?: string
     debounce?: number
+    /** Treat "1. " typed at the start as "number this list" (outline rows; not titles). */
+    numberMarkers?: boolean
   }>(),
-  { placeholder: '', label: 'Text', debounce: 500 },
+  { placeholder: '', label: 'Text', debounce: 500, numberMarkers: false },
 )
 
 const emit = defineEmits<{
@@ -159,12 +161,12 @@ function checkMarker(): boolean {
   const e = el.value
   if (!e) return false
   const t = current()
-  const m = typedMarker(t)
+  const m = typedMarker(t, { numbers: props.numberMarkers })
   if (!m) return false
   const c = getCaret(e)
   if (!c || c.start !== m.length || c.end !== m.length) return false
   handle.replace(t.slice(m.length), { caret: 0 })
-  emit('marker', { task: m.task, done: m.done })
+  emit('marker', { task: m.task, done: m.done, numbered: m.numbered })
   return true
 }
 
@@ -288,7 +290,10 @@ function onPaste(e: ClipboardEvent) {
   if (lines.length === 0) return
   const wasEmpty = current() === ''
   insertText(lines[0].text)
-  if (wasEmpty && lines[0].task !== undefined) emit('marker', { task: lines[0].task, done: !!lines[0].done })
+  const first = lines[0]
+  if (wasEmpty && (first.task !== undefined || (first.numbered && props.numberMarkers))) {
+    emit('marker', { task: first.task, done: !!first.done, numbered: props.numberMarkers && first.numbered })
+  }
   if (lines.length > 1) emit('pasteLines', lines.slice(1))
 }
 

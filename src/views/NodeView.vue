@@ -121,6 +121,7 @@ async function onTitleMarker(m: LineMarker) {
   if (kind.value !== 'item') return
   try {
     if (m.done) return await api.setDone(props.id, true)
+    if (m.task === undefined) return
     await api.setTask(props.id, m.task)
     if (m.task) await api.setDone(props.id, false)
   } catch (e) {
