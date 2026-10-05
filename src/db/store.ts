@@ -17,6 +17,8 @@ import {
   type Backlink,
   type Crumb,
   type DeletedEntry,
+  type Fact,
+  type FactView,
   type ExportFile,
   type GraphEdge,
   type GraphNode,
@@ -67,7 +69,7 @@ interface SiblingRow {
   sort_key: string | null
 }
 
-const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged, category, props'
+const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged, category, props, facts'
 const MAX_LABEL_DEPTH = 3
 
 export class StoreError extends Error {
@@ -140,6 +142,8 @@ const SYNC_COLUMNS: Record<string, (v: unknown) => string | number | null> = {
   // Kinds of context (migration 9).
   category: (v) => (typeof v === 'string' && UUID_RE.test(v) ? v : null),
   props: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : null),
+  // Facts about a node (migration 11).
+  facts: (v) => (Array.isArray(v) && v.length ? JSON.stringify(v) : null),
   // Relations you chose for single links (migration 8).
   link_rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? JSON.stringify(v) : null),
 }
@@ -324,12 +328,15 @@ export class Store {
     const sole = soleLink(text)
     const ref = sole && sole !== id ? sole : null
     this.db.exec('UPDATE nodes SET ref = ? WHERE id = ? AND ref IS NOT ?', [ref, id, ref])
-    const wanted = new Set(parseTokens(text).filter((t) => t !== id))
+    // Facts are links too, from the node they're about, labelled with their relation.
+    const factTo = new Map(this.#facts(id).filter((f) => f.to !== id).map((f) => [f.to, f.name]))
+    const wanted = new Set([...parseTokens(text).filter((t) => t !== id), ...factTo.keys()])
     const contexts = wanted.size ? linkContexts(text) : new Map()
     // The server's label wins while it was read from this exact text; otherwise our own guess.
     const rels = wanted.size ? this.#rels(id) : {}
     const hash = wanted.size ? textHash(text) : ''
     const phraseOf = (dst: string) => {
+      if (factTo.has(dst)) return factTo.get(dst)!
       const label = rels[dst]
       return label && label.h === hash ? label.r : (contexts.get(dst)?.phrase ?? null)
     }
@@ -1030,13 +1037,19 @@ export class Store {
       [id],
     )
     const vocab = this.#vocab()
-    const out: Backlink[] = rows.map((r) => ({
-      source: toInfo(r),
-      alsoOn: r.ref === id,
-      suggested: r.phrase,
-      ...this.#resolve(vocab, r.phrase, this.#linkRels(r.id)[id]),
-      crumbs: this.getAncestors(r.id),
-    }))
+    const out: Backlink[] = rows.map((r) => {
+      const fact = r.facts ? this.#facts(r.id).find((f) => f.to === id) : undefined
+      return {
+        source: toInfo(r),
+        alsoOn: r.ref === id,
+        fact: !!fact,
+        suggested: r.phrase,
+        ...(fact
+          ? { phrase: (fact.rel && vocab.names.get(fact.rel)) || fact.name, relationId: fact.rel, pinned: false }
+          : this.#resolve(vocab, r.phrase, this.#linkRels(r.id)[id])),
+        crumbs: this.getAncestors(r.id),
+      }
+    })
     const pathOf = (b: Backlink) => b.crumbs.map((c) => c.label).join('\u0000').toLowerCase()
     // Open to-dos, then plain mentions, then finished to-dos.
     const rank = (b: Backlink) => (b.source.done ? 2 : b.source.task ? 0 : 1)
@@ -1067,9 +1080,9 @@ export class Store {
     walk(tree)
     for (const b of backlinks) for (const tok of parseTokens(b.source.text)) tokenIds.add(tok)
     const refs = this.getRefs([...tokenIds])
-    // Order outgoing links by their position in the text.
+    // Links in the text, in the order they appear (facts are listed on their own).
     const order = parseTokens(raw.text)
-    outgoingIds.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+    const textLinks = outgoingIds.filter((o) => order.includes(o)).sort((a, b) => order.indexOf(a) - order.indexOf(b))
     const relationLinks = raw.kind === 'relation' ? this.getRelationLinks({ relationId: id }) : []
     const suggestedCategory =
       backlinks.length && !this.#liveCategory(raw) && (raw.kind === 'item' || raw.kind === 'place' || raw.kind === 'person')
@@ -1082,10 +1095,11 @@ export class Store {
       ancestors: this.getAncestors(id),
       tree,
       refs: allRefs,
-      outgoing: outgoingIds.map((o) => refs[o]),
+      outgoing: textLinks.map((o) => refs[o]),
       backlinks,
       relationLinks,
       suggestedCategory,
+      facts: this.#factViews(id),
     }
   }
 
@@ -1344,6 +1358,124 @@ export class Store {
       nodeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM nodes WHERE deleted_at IS NULL')?.c ?? 0,
       edgeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM edges')?.c ?? 0,
     }
+  }
+
+  // ---------------------------------------------------------------- facts
+  //
+  // A fact is something you state about a node: Alex is "cofounder of"
+  // Acme. Facts live on the node they're about (nodes.facts), never
+  // guessed from notes; each also makes a labelled link from that node, so the
+  // graph and the target's page show it.
+
+  #facts(id: string): Fact[] {
+    const raw = this.db.get<{ facts: string | null }>('SELECT facts FROM nodes WHERE id = ?', [id])?.facts
+    try {
+      const v = raw ? JSON.parse(raw) : []
+      return Array.isArray(v) ? v.filter((f) => f && typeof f.to === 'string' && UUID_RE.test(f.to)) : []
+    } catch {
+      return []
+    }
+  }
+
+  #setFacts(id: string, facts: Fact[]): void {
+    this.db.exec('UPDATE nodes SET facts = ?, updated_at = ? WHERE id = ?', [
+      facts.length ? JSON.stringify(facts) : null,
+      this.#now(),
+      id,
+    ])
+    this.#reconcileLinks(id, this.#raw(id)!.text)
+  }
+
+  #factViews(id: string): FactView[] {
+    const facts = this.#facts(id)
+    if (!facts.length) return []
+    const vocab = this.#vocab()
+    const refs = this.getRefs(facts.map((f) => f.to))
+    return facts.map((f, index) => ({
+      index,
+      relationId: f.rel && vocab.names.has(f.rel) ? f.rel : null,
+      name: (f.rel && vocab.names.get(f.rel)) || f.name,
+      target: refs[f.to],
+    }))
+  }
+
+  #relationName(relationId: string): string {
+    const r = this.#raw(relationId)
+    if (!r || r.kind !== 'relation' || r.deleted_at !== null || relationId === NO_RELATION_ID) {
+      throw new StoreError('No such relation', 'not_found')
+    }
+    return cleanLabel(r.text)
+  }
+
+  /** State a fact about a node: it is <relation> <target>. Returns its position. */
+  addFact(id: string, relationId: string, to: string): number {
+    return this.db.tx(() => {
+      this.#requireLive(id)
+      if (!this.#raw(to)) throw new StoreError(`No node ${to}`, 'not_found')
+      if (to === id) throw new StoreError('A fact needs something else to be about', 'self')
+      const facts = this.#facts(id)
+      const existing = facts.findIndex((f) => f.to === to && f.rel === relationId)
+      if (existing >= 0) return existing
+      // One relation per target: stating a new one about the same thing replaces it.
+      const rest = facts.filter((f) => f.to !== to)
+      rest.push({ to, rel: relationId, name: this.#relationName(relationId) })
+      this.#setFacts(id, rest)
+      return rest.length - 1
+    })
+  }
+
+  /** Change a fact's relation or what it's about. */
+  updateFact(id: string, index: number, patch: { relationId?: string; to?: string }): void {
+    this.db.tx(() => {
+      this.#requireLive(id)
+      const facts = this.#facts(id)
+      const f = facts[index]
+      if (!f) throw new StoreError('No such fact', 'not_found')
+      if (patch.relationId) facts[index] = { ...f, rel: patch.relationId, name: this.#relationName(patch.relationId) }
+      if (patch.to) {
+        if (patch.to === id || !this.#raw(patch.to)) throw new StoreError('Can’t point it there', 'bad_target')
+        facts[index] = { ...facts[index], to: patch.to }
+      }
+      this.#setFacts(id, facts.filter((x, i) => i === index || x.to !== facts[index].to))
+    })
+  }
+
+  removeFact(id: string, index: number): void {
+    this.db.tx(() => {
+      this.#requireLive(id)
+      const facts = this.#facts(id)
+      if (!facts[index]) throw new StoreError('No such fact', 'not_found')
+      facts.splice(index, 1)
+      this.#setFacts(id, facts)
+    })
+  }
+
+  /**
+   * Make a note a fact about what it's under: "cofounder of [[Acme]]"
+   * under Alex becomes Alex's fact, and the note goes. Returns the subject.
+   */
+  noteToFact(lineId: string, relationId: string, to?: string): string {
+    return this.db.tx(() => {
+      const line = this.#requireLive(lineId)
+      const pe = this.#parentEdge(lineId)
+      if (!pe) throw new StoreError('Only a line under something can be a fact about it', 'no_parent')
+      const target = to ?? parseTokens(line.text)[0]
+      if (!target) throw new StoreError('The line needs a link to what it’s about', 'no_link')
+      this.addFact(pe.src, relationId, target)
+      this.deleteSubtree(lineId)
+      return pe.src
+    })
+  }
+
+  /** Turn a fact back into a note under its node ("cofounder of [[Acme]]"). Returns the note's id. */
+  factToNote(id: string, index: number): string {
+    return this.db.tx(() => {
+      const f = this.#factViews(id)[index]
+      if (!f) throw new StoreError('No such fact', 'not_found')
+      const note = this.createChild(id, undefined, { text: `${f.name} ${makeToken(f.target.id)}`, task: false })
+      this.removeFact(id, index)
+      return note
+    })
   }
 
   // ------------------------------------------------------------- contexts
@@ -1838,6 +1970,7 @@ export class Store {
     return {
       rels: this.#rels(id),
       link_rels: this.#linkRels(id),
+      facts: this.#facts(id),
       category: r.category,
       props,
       kind: r.kind,
@@ -2002,7 +2135,7 @@ export class Store {
         if (c.f === 'pos') continue
         ensure(c.n)
         this.db.exec(`UPDATE nodes SET ${c.f} = ? WHERE id = ?`, [SYNC_COLUMNS[c.f](c.v), c.n])
-        if (c.f === 'text' || c.f === 'rels') textChanged.add(c.n)
+        if (c.f === 'text' || c.f === 'rels' || c.f === 'facts') textChanged.add(c.n)
         if (c.f === 'kind' || c.f === 'task' || c.f === 'done') flagsChanged.add(c.n)
       }
       // Positions last, once every node in the batch exists.
@@ -2131,7 +2264,7 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       for (const n of file.nodes) {
         this.db.exec(
-          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             n.id,
             n.kind,
@@ -2147,6 +2280,7 @@ export class Store {
             n.purged,
             n.category,
             n.props,
+            n.facts,
           ],
         )
       }
@@ -2221,6 +2355,7 @@ export function validateExport(data: unknown): ExportFile {
       purged: n.purged ? 1 : 0,
       category: isStr(n.category) ? n.category : null,
       props: isStr(n.props) ? n.props : null,
+      facts: isStr(n.facts) ? n.facts : null,
     })
   }
 

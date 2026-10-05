@@ -192,6 +192,18 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
     version: 10,
     sql: `ALTER TABLE nodes ADD COLUMN ref TEXT;`,
   },
+  {
+    // Facts about a node: JSON [{ to, rel, name }] ("cofounder of" Acme),
+    // stored on the node they're about. Each is also a link from that node,
+    // labelled with the relation. Your own edits, so it syncs.
+    version: 11,
+    sql: `
+      ALTER TABLE nodes ADD COLUMN facts TEXT;
+      CREATE TRIGGER sync_nodes_facts AFTER UPDATE OF facts ON nodes WHEN old.facts IS NOT new.facts BEGIN
+        INSERT OR REPLACE INTO sync_clock (node, field, hlc, local) VALUES (new.id, 'facts', hlc_now(), 1);
+      END;
+    `,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

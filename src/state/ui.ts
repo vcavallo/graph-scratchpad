@@ -107,6 +107,8 @@ export interface PickerRequest {
   excludeIds?: string[]
   /** Kinds to suggest when the query is empty. */
   emptyKinds?: Kind[]
+  /** Start with this typed in the search box. */
+  initialQuery?: string
   /** Only these kinds, whatever the query. */
   kinds?: Kind[]
   /** What "New …" can create (default: place, person, item in the Inbox). */
