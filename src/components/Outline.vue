@@ -208,7 +208,8 @@ function toggleDone(row: T.FlatRow) {
   if (n.kind !== 'item') return
   n.done = !n.done
   if (n.done) n.task = true // checking off a bullet makes it a to-do
-  sync(api.setDone(n.id, n.done))
+  // A line that's only a link is that item: check off the item itself.
+  sync(api.setDone(n.ref ?? n.id, n.done))
 }
 
 /** Switch a line between a to-do (checkbox) and a plain bullet. */
@@ -218,9 +219,10 @@ function setTask(n: TreeNode, task: boolean, done = false) {
   if (n.task === task && wasDone === (task && done)) return
   n.task = task
   n.done = task && done
-  if (n.done) sync(api.setDone(n.id, true))
-  else if (task && wasDone) sync(api.setDone(n.id, false))
-  else sync(api.setTask(n.id, task)) // becoming a bullet also unchecks it
+  const id = n.ref ?? n.id // a line that's only a link changes the item itself
+  if (n.done) sync(api.setDone(id, true))
+  else if (task && wasDone) sync(api.setDone(id, false))
+  else sync(api.setTask(id, task)) // becoming a bullet also unchecks it
 }
 
 function toggleTask(row: T.FlatRow) {

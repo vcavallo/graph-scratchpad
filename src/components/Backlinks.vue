@@ -12,11 +12,16 @@ const props = defineProps<{ backlinks: Backlink[]; heading: string; target: stri
 const emit = defineEmits<{ toggle: [id: string, done: boolean] }>()
 const router = useRouter()
 
+// Lines that are nothing but this link: this item, pulled into other lists.
+const alsoOn = computed(() => props.backlinks.filter((b) => b.alsoOn))
+const links = computed(() => props.backlinks.filter((b) => !b.alsoOn))
+const where = (b: Backlink) => b.crumbs.at(-1)
+
 // What the links say they are ("buy at", "waiting on"), most used first; '' is "no relation".
 // Your relations count together however each line was worded.
 const relations = computed(() => {
   const groups = new Map<string, { phrase: string; count: number; relationId: string | null }>()
-  for (const b of props.backlinks) {
+  for (const b of links.value) {
     const k = b.phrase ?? ''
     const g = groups.get(k) ?? { phrase: k, count: 0, relationId: null }
     g.count++
@@ -39,7 +44,7 @@ function labelOptions(b: Backlink) {
 }
 const picked = ref<string | null>(null)
 const filter = computed(() => (picked.value !== null && relations.value.some((r) => r.phrase === picked.value) ? picked.value : null))
-const shown = computed(() => (filter.value === null ? props.backlinks : props.backlinks.filter((b) => (b.phrase ?? '') === filter.value)))
+const shown = computed(() => (filter.value === null ? links.value : links.value.filter((b) => (b.phrase ?? '') === filter.value)))
 
 // Open to-dos first, then plain mentions (notes, pads, places), then what's done.
 const open = computed(() => shown.value.filter((b) => b.source.task && !b.source.done))
@@ -71,6 +76,16 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
       <span v-if="summary" class="count">{{ summary }}</span>
     </h2>
     <p v-if="!backlinks.length" class="empty-note">Nothing links here yet. Type @ in any list to link to it.</p>
+    <div v-if="alsoOn.length" class="also-on">
+      <span class="also-on-label">Also on</span>
+      <RouterLink
+        v-for="b in alsoOn"
+        :key="b.source.id"
+        :to="where(b) ? `/n/${where(b)!.id}` : `/n/${b.source.id}`"
+        class="also-on-place"
+        >{{ crumbText(b) || 'Untitled' }}</RouterLink
+      >
+    </div>
     <div v-if="relations.length > 1" class="rel-chips" role="group" aria-label="Show links by kind">
       <button type="button" class="rel-chip" :aria-pressed="filter === null" @click="picked = null">
         All <span class="n">{{ backlinks.length }}</span>

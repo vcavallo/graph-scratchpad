@@ -114,6 +114,8 @@ export class RelationLabeler {
     const out = []
     for (const [src, text] of this.#sync.allOf('text')) {
       if (typeof text !== 'string' || !text.includes('[[')) continue
+      // A line that's only a link is the item itself pulled into a list: nothing to label.
+      if (/^\s*\[\[[0-9a-fA-F-]{36}\]\]\s*$/.test(text)) continue
       if (this.#sync.field(src, 'deleted_at') != null || this.#sync.field(src, 'purged')) continue
       const rels = this.#sync.field(src, 'rels') ?? {}
       const h = textHash(text)

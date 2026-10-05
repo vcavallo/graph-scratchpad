@@ -1013,3 +1013,43 @@ describe('contexts and their kinds', () => {
     expect(old.listCategories().map((c) => c.id)).toEqual([PLACES_ID, PEOPLE_ID])
   })
 })
+
+describe('a line that is only a link', () => {
+  it('is the linked item: its checkbox, its done, counted once', () => {
+    const home = s.createPad('Dump')
+    const todo = s.createChild(home, undefined, { text: 'Buy baking soda', task: true })
+    const today = s.createPad('Today')
+    const line = s.createChild(today, undefined, { text: makeToken(todo), task: false })
+    const row = () => s.getTree(today).children[0]
+    expect(row()).toMatchObject({ ref: todo, task: true, done: false })
+    s.setDone(todo, true)
+    expect(row()).toMatchObject({ ref: todo, task: true, done: true })
+    const counts = (pad: string) => s.listPads().find((p) => p.id === pad)!
+    expect(counts(today)).toMatchObject({ taskCount: 1, openCount: 0 })
+    s.setDone(todo, false)
+    expect(counts(today)).toMatchObject({ taskCount: 1, openCount: 1 })
+    expect(counts(home)).toMatchObject({ taskCount: 1, openCount: 1 })
+    // The item's page lists it as pulled in, not as another open to-do.
+    expect(s.getBacklinks(todo)).toMatchObject([{ alsoOn: true, source: { id: line } }])
+    // Search finds the item once.
+    expect(s.search('baking').map((r) => r.id)).toEqual([todo])
+  })
+
+  it('is an ordinary line again once it says more than the link', () => {
+    const todo = s.createChild(pad, undefined, { text: 'Call the plumber', task: true })
+    const line = s.createChild(pad, undefined, { text: makeToken(todo), task: false })
+    s.updateText(line, `${makeToken(todo)} before noon`)
+    const row = s.getTree(pad).children.find((c) => c.id === line)!
+    expect(row).toMatchObject({ ref: null, task: false })
+    expect(s.getBacklinks(todo)[0].alsoOn).toBe(false)
+  })
+
+  it('works out which lines are links for data from before', async () => {
+    const todo = s.createChild(pad, undefined, { text: 'x', task: true })
+    const line = s.createChild(pad, undefined, { text: makeToken(todo) })
+    s.db.exec('UPDATE nodes SET ref = NULL')
+    s.db.exec(`DELETE FROM meta WHERE key = 'link_phrases'`)
+    const reopened = await makeStore({ db: s.db })
+    expect(reopened.getTree(pad).children.find((c) => c.id === line)?.ref).toBe(todo)
+  })
+})

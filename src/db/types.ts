@@ -91,6 +91,11 @@ export interface TreeNode {
   links: number
   /** The kind of context this is, if it's one. */
   category: string | null
+  /**
+   * When the line is nothing but a link: what it links to. Then task and done
+   * are that item's, and checking it off checks off that item.
+   */
+  ref: string | null
   children: TreeNode[]
 }
 
@@ -125,6 +130,8 @@ export interface Backlink {
   suggested: string | null
   /** You chose the relation for this one link. */
   pinned: boolean
+  /** The line is nothing but this link: it's this item, pulled into another list. */
+  alsoOn: boolean
   /** Ancestors of the source, root (pad) first, not including the source. */
   crumbs: Crumb[]
 }

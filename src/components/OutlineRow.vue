@@ -29,7 +29,15 @@ const saveText = (t: string) => props.save(node.value.id, t)
 <template>
   <div
     class="row"
-    :class="{ active, done: node.done, task: node.task, numbered: row.numbered, [`kind-${node.kind}`]: true, context: !!node.category }"
+    :class="{
+      active,
+      done: node.done,
+      task: node.task,
+      numbered: row.numbered,
+      [`kind-${node.kind}`]: true,
+      context: !!node.category,
+      ref: !!node.ref,
+    }"
     :style="{ '--depth': row.depth }"
     :data-id="node.id"
   >
@@ -48,7 +56,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
     <RouterLink
       class="bullet"
       :class="{ 'has-hidden': node.collapsed && row.hasChildren }"
-      :to="`/n/${node.id}`"
+      :to="`/n/${node.ref ?? node.id}`"
       aria-label="Open item"
       @mousedown.prevent
     >
