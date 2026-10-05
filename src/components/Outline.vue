@@ -20,6 +20,7 @@ import { refCache } from '@/state/refs'
 import { labelize } from '@/lib/tokens'
 import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
+import { sendActions } from '@/lib/sendTo'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
   addLabel: 'item',
@@ -367,6 +368,9 @@ function openMore(row: T.FlatRow) {
   const actions: SheetAction[] = [
     { label: 'Open', icon: 'open', run: () => router.push(`/n/${n.id}`) },
     { label: 'Move to…', icon: 'move', run: () => moveTo(row) },
+    // Pull it into another list too (Today…), as a line that's only a link to it.
+    // (A line that’s only a link sends the item it links to.)
+    ...sendActions({ id: n.ref ?? n.id, label: labelOf(n) }, T.subtreeIds(n)),
   ]
   if (row.hasChildren) {
     actions.push(
