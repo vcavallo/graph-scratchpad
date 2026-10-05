@@ -33,6 +33,9 @@ function node(kind, text, o = {}) {
     sort_key: null,
     numbered: o.numbered ? 1 : 0,
     task: kind === 'item' && o.task ? 1 : 0,
+    purged: 0,
+    category: o.category ?? null,
+    props: o.props ? JSON.stringify(o.props) : null,
   })
   return id
 }
@@ -50,6 +53,12 @@ function tree(parent, specs) {
 const hardware = node('place', 'Hardware store')
 const post = node('place', 'Post office')
 const sam = node('person', 'Sam')
+// A kind of context of your own, with a tab in the bar.
+const rooms = node('category', 'Rooms', { props: { icon: 'home', pinned: true, tone: 2 } })
+const garage = node('item', 'Garage', { category: rooms })
+node('item', 'Kitchen', { category: rooms })
+// A relation you kept, with another way you write it folded in.
+const buyAt = node('relation', 'buy at')
 const groceryId = randomUUID()
 const todo = { task: true }
 const done = { task: true, done: true }
@@ -81,6 +90,7 @@ tree(saturday, [
       ['Check the freezer before buying more', {}],
     ],
   ],
+  [`Clear the workbench in the ${tok(garage)}`, todo],
   ['Rain after 3pm, so garden things first', {}],
 ])
 tree(garden, [
@@ -89,7 +99,8 @@ tree(garden, [
     todo,
     [
       [`Buy 3/4-inch PVC elbows at ${tok(hardware)}`, todo],
-      [`Teflon tape at ${tok(hardware)}`, done],
+      [`Grab teflon tape at ${tok(hardware)}`, todo],
+      [`Return the wrong hose clamp to ${tok(hardware)}`, todo],
       [`Which zone leaks? Asked ${tok(sam)} ${tok(waiting)}`, todo],
     ],
   ],
@@ -103,6 +114,7 @@ tree(states, [
 ])
 tree(hardware, [['Closes at 6 on Sundays', {}]])
 tree(sam, [['Lives two doors down', {}]])
+tree(buyAt, [['pick up at', {}]])
 
 const padKeys = generateNKeysBetween(null, null, 3)
 for (const [i, id] of [saturday, garden, states].entries()) nodes.find((n) => n.id === id).sort_key = padKeys[i]
@@ -115,7 +127,7 @@ for (const n of nodes) {
 const file = join(mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'gs-demo-')), 'example.json')
 writeFileSync(
   file,
-  JSON.stringify({ app: 'graph-scratchpad', format: 1, schema_version: 4, exported_at: clock, nodes, edges }, null, 2),
+  JSON.stringify({ app: 'graph-scratchpad', format: 1, schema_version: 9, exported_at: clock, nodes, edges }, null, 2),
 )
 
 // ------------------------------------------------------------ screenshots
@@ -158,13 +170,22 @@ try {
   await sleep(600)
   await page.screenshot({ path: OUT + 'outline.png' })
 
+  // A place's page: what links there, labelled by relation (yours solid, suggestions outlined).
+  await page.goto(`${BASE}/#/n/${hardware}`)
+  await page.waitForSelector('.backlinks')
+  await hideToasts()
+  await sleep(600)
+  await page.screenshot({ path: OUT + 'context.png' })
+
+  await page.goto(`${BASE}/#/n/${saturday}`)
+  await page.waitForSelector('.outline .row')
   await page.tap('[aria-label="Show graph"]')
   await page.waitForSelector('.gnode')
   await page.tap('.segmented button:has-text("3 steps")')
   await hideToasts()
   await sleep(3500)
   await page.screenshot({ path: OUT + 'graph.png' })
-  console.log('Saved', OUT + 'outline.png', 'and', OUT + 'graph.png')
+  console.log('Saved outline.png, context.png and graph.png in', OUT)
 } finally {
   await close()
   server?.kill()
