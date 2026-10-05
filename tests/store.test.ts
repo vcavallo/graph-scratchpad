@@ -3,7 +3,7 @@ import { makeDb, makeStore, shape } from './helpers'
 import type { Store } from '../src/db/store'
 import { MIGRATIONS, LATEST_SCHEMA_VERSION } from '../src/db/migrations'
 import { makeToken } from '../src/lib/tokens'
-import { NO_RELATION_ID } from '../src/db/types'
+import { NO_RELATION_ID, PEOPLE_ID, PLACES_ID } from '../src/db/types'
 
 let s: Store
 let pad: string
@@ -924,5 +924,92 @@ describe('your relations', () => {
     s.updateText(a, `Order bolts from ${makeToken(shop)}`)
     expect(s.getBacklinks(shop).find((x) => x.source.id === a)?.phrase).toBe('get from')
     expect(s.getNeighborhood(a, 1).edges.find((e) => e.dst === shop)?.phrase).toBe('get from')
+  })
+})
+
+describe('contexts and their kinds', () => {
+  it('starts with Places (in the bar) and People (not), which older places and people belong to', () => {
+    const cats = s.listCategories()
+    expect(cats.map((c) => [c.id, c.name, c.pinned])).toEqual([
+      [PLACES_ID, 'Places', true],
+      [PEOPLE_ID, 'People', false],
+    ])
+    const shop = s.createNode('place', 'Shop')
+    expect(s.getNode(shop)?.category).toBe(PLACES_ID)
+    expect(s.listContexts(PLACES_ID).map((c) => c.label)).toEqual(['Shop'])
+    expect(s.search('').some((r) => r.kind === 'category')).toBe(false)
+  })
+
+  it('makes kinds of your own, and lets any line be a context where it is', () => {
+    const rooms = s.createCategory('Rooms', { icon: 'home' })
+    const garage = s.createChild(pad, undefined, { text: 'Garage' })
+    s.setCategory(garage, rooms)
+    expect(s.getNode(garage)?.category).toBe(rooms)
+    expect(shape(s, pad)).toEqual(['Garage']) // still in its list
+    const t = s.createChild(pad, undefined, { text: `Sweep the ${makeToken(garage)}` })
+    expect(s.listContexts(rooms)).toMatchObject([{ id: garage, openBacklinks: 1, totalBacklinks: 1 }])
+    expect(s.listCategories().find((c) => c.id === rooms)).toMatchObject({ name: 'Rooms', icon: 'home', count: 1, open: 1 })
+    s.setDone(t, true)
+    expect(s.listCategories().find((c) => c.id === rooms)?.open).toBe(0)
+    // Notes under a context start as bullets.
+    expect(s.getNode(s.createChild(garage))!.task).toBe(false)
+    // Its chips take the kind's colour.
+    expect(s.getRefs([garage])[garage].tone).toBe(s.listCategories().find((c) => c.id === rooms)!.tone)
+  })
+
+  it('pins kinds to the bar and changes their icon', () => {
+    const projects = s.createCategory('Projects')
+    s.setCategoryProps(projects, { pinned: true, icon: 'folder' })
+    s.setCategoryProps(PLACES_ID, { pinned: false })
+    expect(s.listCategories().map((c) => [c.name, c.pinned, c.icon])).toEqual([
+      ['Places', false, 'pin'],
+      ['People', false, 'person'],
+      ['Projects', true, 'folder'],
+    ])
+  })
+
+  it('turns a line in a list into a context it links to', () => {
+    const projects = s.createCategory('Projects')
+    const line = s.createChild(pad, undefined, { text: 'Kitchen remodel' })
+    const ctx = s.convertToContext(line, projects)
+    expect(ctx).not.toBe(line)
+    expect(s.getNode(line)!.text).toBe(makeToken(ctx))
+    expect(s.getNode(ctx)).toMatchObject({ text: 'Kitchen remodel', category: projects })
+    expect(s.listContexts(projects).map((c) => c.label)).toEqual(['Kitchen remodel'])
+  })
+
+  it('stops being a context, including older places', () => {
+    const shop = s.createNode('place', 'Shop')
+    s.setCategory(shop, null)
+    expect(s.getNode(shop)).toMatchObject({ kind: 'item', category: null })
+    expect(s.listContexts(PLACES_ID)).toEqual([])
+  })
+
+  it('suggests a kind from how a thing is linked to', () => {
+    const shop = s.createNode('place', 'Shop')
+    s.createChild(pad, undefined, { text: `Buy elbows at ${makeToken(shop)}` })
+    s.createChild(pad, undefined, { text: `Buy tape at ${makeToken(shop)}` })
+    const nursery = s.createChild(pad, undefined, { text: 'Plant nursery' })
+    s.createChild(pad, undefined, { text: `Buy soil at ${makeToken(nursery)}` })
+    const maya = s.createChild(pad, undefined, { text: 'Maya' })
+    s.createChild(pad, undefined, { text: `Lunch with ${makeToken(maya)}` })
+    const others = s.listOtherContexts()
+    expect(others.find((o) => o.id === nursery)).toMatchObject({ suggested: PLACES_ID, openBacklinks: 1 })
+    expect(others.find((o) => o.id === maya)?.suggested).toBeNull() // nothing like "with" among People yet
+    expect(s.getNodeView(nursery).suggestedCategory).toBe(PLACES_ID)
+    s.setCategory(nursery, PLACES_ID)
+    expect(s.listOtherContexts().map((o) => o.id)).not.toContain(nursery)
+  })
+
+  it('keeps the built-in kinds through joining a server and importing older files', async () => {
+    const fresh = await makeStore()
+    fresh.seedIfEmpty()
+    expect(fresh.syncPrepareJoin()).toBe(true)
+    expect(fresh.listCategories().map((c) => c.id)).toEqual([PLACES_ID, PEOPLE_ID])
+    const file = JSON.parse(JSON.stringify(s.exportAll()))
+    file.nodes = file.nodes.filter((n: { kind: string }) => n.kind !== 'category')
+    const old = await makeStore()
+    old.importAll(file)
+    expect(old.listCategories().map((c) => c.id)).toEqual([PLACES_ID, PEOPLE_ID])
   })
 })

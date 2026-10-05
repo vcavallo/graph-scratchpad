@@ -46,7 +46,7 @@ const crumbText = (l: RelationLink) => l.crumbs.map((c) => c.label || 'Untitled'
             <span class="box"><Icon v-if="l.source.done" name="check" :size="15" :stroke="3" /></span>
           </button>
           <span v-else class="backlink-mark" :class="`kind-${l.source.kind}`" aria-hidden="true">
-            <KindIcon v-if="l.source.kind !== 'item'" :kind="l.source.kind" :size="16" />
+            <KindIcon v-if="l.source.kind !== 'item' || l.source.category" :kind="l.source.kind" :category="l.source.category" :size="16" />
             <span v-else class="dot" />
           </span>
           <div class="backlink-body" @click="router.push(`/n/${l.source.id}`)">

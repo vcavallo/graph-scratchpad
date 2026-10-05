@@ -132,7 +132,7 @@ const { ctx, close } = await launch({ userDataDir: mkdtempSync(join(process.env.
 const page = ctx.pages()[0] ?? (await ctx.newPage())
 const hideToasts = () => page.addStyleTag({ content: '.toasts { display: none !important }' })
 // The graph's starting positions are random; seed them so the screenshot is the same every time.
-const SEED = Number(process.env.SEED ?? 3)
+const SEED = Number(process.env.SEED ?? 1)
 await page.addInitScript((seed) => {
   let x = seed
   Math.random = () => {

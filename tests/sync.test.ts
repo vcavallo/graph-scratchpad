@@ -6,6 +6,7 @@ import { syncOnce, type Transport } from '../src/db/sync'
 import type { Store } from '../src/db/store'
 import { makeToken } from '../src/lib/tokens'
 import { makeDb, makeStore, shape } from './helpers'
+import { PEOPLE_ID } from '../src/db/types'
 import { MIGRATIONS } from '../src/db/migrations'
 
 const BASE = 1_700_000_000_000
@@ -266,6 +267,25 @@ describe('sync', () => {
         [[x, 'buy at', false], [y, 'buy at', true]].sort(),
       )
     }
+    expect(dump(a.s)).toEqual(dump(b.s))
+  })
+
+  it('carries kinds of context, what each thing is, and changes to the built-in kinds', async () => {
+    const server = makeServer()
+    const a = await device(server)
+    const b = await device(server)
+    const pad = a.s.createPad('P')
+    const rooms = a.s.createCategory('Rooms', { icon: 'home', pinned: true })
+    const garage = a.s.createChild(pad, undefined, { text: 'Garage' })
+    a.s.setCategory(garage, rooms)
+    a.s.setCategoryProps(PEOPLE_ID, { pinned: true })
+    await settle(a, b)
+    expect(b.s.listCategories().map((c) => [c.name, c.pinned])).toEqual([
+      ['Places', true],
+      ['People', true],
+      ['Rooms', true],
+    ])
+    expect(b.s.listContexts(rooms).map((c) => c.id)).toEqual([garage])
     expect(dump(a.s)).toEqual(dump(b.s))
   })
 

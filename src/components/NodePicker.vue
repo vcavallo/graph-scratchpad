@@ -10,6 +10,7 @@ import { api } from '@/db/api'
 import type { BrowseRow, Crumb, Kind, SearchResult } from '@/db/types'
 import { closePicker, pickerState, reportError, type PickResult } from '@/state/ui'
 import { resultContext } from '@/lib/kinds'
+import { categoryById } from '@/state/categories'
 
 const q = ref('')
 const results = ref<SearchResult[]>([])
@@ -41,9 +42,14 @@ const creates = computed(() => {
   if (!req.value?.allowCreate || !trimmed.value) return []
   const exact = results.value.some((r) => r.label.toLowerCase() === trimmed.value.toLowerCase())
   if (exact && results.value.length) return []
+  if (req.value.createOptions) {
+    return req.value.createOptions.map((o) => ({ kind: o.kind, key: o.key, label: o.label(trimmed.value), make: o.create }))
+  }
   return (req.value.createKinds ?? (['place', 'person', 'item'] as Kind[])).map((kind) => ({
     kind,
+    key: kind as string,
     label: CREATE_LABELS[kind]?.(trimmed.value) ?? trimmed.value,
+    make: undefined as ((text: string, id: string) => Promise<unknown>) | undefined,
   }))
 })
 
@@ -146,10 +152,11 @@ function moveHere() {
   if (h) finish({ id: h.id, kind: h.kind, label: h.label })
 }
 
-function create(kind: Kind) {
+function create(c: (typeof creates.value)[number]) {
+  const kind = c.kind
   const text = kind === 'relation' ? trimmed.value.toLowerCase() : trimmed.value
   const id = crypto.randomUUID()
-  const p = kind === 'item' ? api.createInInbox({ text, id }) : api.createNode(kind, text, id)
+  const p = c.make ? c.make(text, id) : kind === 'item' ? api.createInInbox({ text, id }) : api.createNode(kind, text, id)
   p.catch(reportError)
   finish({ id, kind, label: text })
 }
@@ -173,7 +180,7 @@ function onKey(e: KeyboardEvent) {
     if (browsing.value) return moveHere()
     const i = highlight.value
     if (i < results.value.length) pick(results.value[i])
-    else if (creates.value[i - results.value.length]) create(creates.value[i - results.value.length].kind)
+    else if (creates.value[i - results.value.length]) create(creates.value[i - results.value.length])
   } else if (e.key === 'Escape') {
     e.preventDefault()
     cancel()
@@ -252,21 +259,23 @@ function onKey(e: KeyboardEvent) {
             @mousedown.prevent
             @click="pick(r)"
           >
-            <KindIcon :kind="r.kind" />
+            <KindIcon :kind="r.kind" :category="r.category" />
             <span class="picker-text">
               <span class="picker-label">{{ r.label || 'Untitled' }}</span>
-              <span v-if="resultContext(r)" class="picker-context">{{ resultContext(r) }}</span>
+              <span v-if="resultContext(r, categoryById(r.category)?.name)" class="picker-context">{{
+                resultContext(r, categoryById(r.category)?.name)
+              }}</span>
             </span>
             <Icon v-if="isMove" name="chevron-right" :size="18" />
           </button>
         </li>
-        <li v-for="(c, i) in creates" :key="c.kind">
+        <li v-for="(c, i) in creates" :key="c.key">
           <button
             type="button"
             class="picker-item create"
             :class="{ hl: i + results.length === highlight }"
             @mousedown.prevent
-            @click="create(c.kind)"
+            @click="create(c)"
           >
             <Icon name="plus" :size="18" />
             <span class="picker-text"><span class="picker-label">{{ c.label }}</span></span>

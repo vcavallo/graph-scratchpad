@@ -5,6 +5,7 @@ import { api } from '@/db/api'
 import type { SearchResult } from '@/db/types'
 import { reportError } from '@/state/ui'
 import { resultContext } from '@/lib/kinds'
+import { categoryById } from '@/state/categories'
 
 const q = ref('')
 const results = ref<SearchResult[]>([])
@@ -46,10 +47,12 @@ onMounted(() => {
     <ul class="list">
       <li v-for="r in results" :key="r.id" class="list-item">
         <RouterLink :to="`/n/${r.id}`" class="list-main" :class="{ done: r.done }">
-          <KindIcon :kind="r.kind" />
+          <KindIcon :kind="r.kind" :category="r.category" />
           <span class="list-text">
             <span class="list-label">{{ r.label || 'Untitled' }}</span>
-            <span v-if="resultContext(r)" class="list-context">{{ resultContext(r) }}</span>
+            <span v-if="resultContext(r, categoryById(r.category)?.name)" class="list-context">{{
+              resultContext(r, categoryById(r.category)?.name)
+            }}</span>
           </span>
         </RouterLink>
       </li>

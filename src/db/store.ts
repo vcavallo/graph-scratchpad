@@ -9,6 +9,11 @@ import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
   NO_RELATION_ID,
+  PEOPLE_ID,
+  PLACES_ID,
+  type CategoryInfo,
+  type CategoryProps,
+  type ContextEntry,
   type Backlink,
   type Crumb,
   type DeletedEntry,
@@ -62,7 +67,7 @@ interface SiblingRow {
   sort_key: string | null
 }
 
-const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged'
+const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged, category, props'
 const MAX_LABEL_DEPTH = 3
 
 export class StoreError extends Error {
@@ -75,8 +80,15 @@ export class StoreError extends Error {
   }
 }
 
+/** The kind of context a node is: its category, or for older places and people, the built-in kind. */
+function effectiveCategory(r: Pick<RawNode, 'kind' | 'category'>): string | null {
+  if (r.kind === 'pad' || r.kind === 'relation' || r.kind === 'category') return null
+  return r.category ?? (r.kind === 'place' ? PLACES_ID : r.kind === 'person' ? PEOPLE_ID : null)
+}
+
 function toInfo(r: RawNode): NodeInfo {
   return {
+    category: effectiveCategory(r),
     id: r.id,
     kind: r.kind,
     text: r.text,
@@ -125,6 +137,9 @@ const SYNC_COLUMNS: Record<string, (v: unknown) => string | number | null> = {
   created_at: (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0),
   // Server-written link labels (see migration 7); kept as JSON text.
   rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : null),
+  // Kinds of context (migration 9).
+  category: (v) => (typeof v === 'string' && UUID_RE.test(v) ? v : null),
+  props: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : null),
   // Relations you chose for single links (migration 8).
   link_rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? JSON.stringify(v) : null),
 }
@@ -290,7 +305,7 @@ export class Store {
     const near = neighbourId ? this.#raw(neighbourId) : undefined
     if (near?.kind === 'item') return near.task === 1
     const parent = this.#raw(parentId)
-    return !(parent && (parent.kind === 'place' || parent.kind === 'person' || parent.kind === 'relation'))
+    return !(parent && (effectiveCategory(parent) || parent.kind === 'relation'))
   }
 
   #insertChildEdge(parentId: string, childId: string, key: string): void {
@@ -800,6 +815,22 @@ export class Store {
     roots.forEach((r, i) => this.db.exec('UPDATE nodes SET sort_key = ? WHERE id = ?', [keys[i], r.id]))
   }
 
+  /** Places and People, as migration 9 makes them (clock '0': the same on every device). */
+  #ensureBuiltInCategories(): void {
+    const builtIns: [string, string, CategoryProps][] = [
+      [PLACES_ID, 'Places', { icon: 'pin', pinned: true, tone: 0 }],
+      [PEOPLE_ID, 'People', { icon: 'person', pinned: false, tone: 1 }],
+    ]
+    for (const [id, name, props] of builtIns) {
+      if (this.#raw(id)) continue
+      this.db.exec(
+        `INSERT INTO nodes (id, kind, text, created_at, updated_at, props) VALUES (?, 'category', ?, 0, 0, ?)`,
+        [id, name, JSON.stringify(props)],
+      )
+      this.db.exec(`UPDATE sync_clock SET hlc = '${ZERO_HLC}', local = 0 WHERE node = ?`, [id])
+    }
+  }
+
   /** The pad that new items created from the link picker are filed under. */
   inboxId(): string {
     return this.db.tx(() => {
@@ -825,7 +856,7 @@ export class Store {
   seedIfEmpty(): string | null {
     return this.db.tx(() => {
       const seeded = this.db.get(`SELECT value FROM meta WHERE key = 'seeded'`)
-      const any = this.db.get(`SELECT id FROM nodes LIMIT 1`)
+      const any = this.db.get(`SELECT id FROM nodes WHERE kind <> 'category' LIMIT 1`)
       if (seeded || any) return null
       this.db.exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1')`)
       const pad = this.createPad('Welcome')
@@ -874,7 +905,7 @@ export class Store {
          WHERE e.type = 'child' AND c.deleted_at IS NULL
        )
        SELECT n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key,
-              n.numbered, n.task, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id,
+              n.numbered, n.task, n.category, n.props, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id,
               (SELECT count(*) FROM edges l JOIN nodes s ON s.id = l.src
                  WHERE l.dst = n.id AND l.type = 'link' AND s.deleted_at IS NULL AND s.done = 0) AS links
        FROM sub JOIN nodes n ON n.id = sub.id
@@ -892,6 +923,7 @@ export class Store {
         numbered: !!r.numbered,
         task: !!r.task,
         links: r.links,
+        category: effectiveCategory(r),
         children: [],
         _key: r.edge_key ?? '',
         _edge: r.edge_id ?? '',
@@ -916,6 +948,7 @@ export class Store {
         numbered: t.numbered,
         task: t.task,
         links: t.links,
+        category: t.category,
         children: kids.map(strip),
       }
     }
@@ -947,9 +980,11 @@ export class Store {
   getRefs(ids: string[]): Record<string, RefInfo> {
     const res = this.#labelResolver()
     res.ensure(ids)
+    const cats = this.#categoryMap()
     const out: Record<string, RefInfo> = {}
     for (const id of ids) {
       const r = res.rows.get(id)
+      const cat = r ? this.#liveCategory(r, cats) : null
       out[id] = r && !r.purged
         ? {
             id,
@@ -958,9 +993,10 @@ export class Store {
             done: !!r.done,
             task: !!r.task,
             deleted: r.deleted_at !== null,
+            tone: cat ? cats.get(cat)!.tone : null,
             exists: true,
           }
-        : { id, kind: 'item', label: 'missing', done: false, task: false, deleted: true, exists: false }
+        : { id, kind: 'item', label: 'missing', done: false, task: false, deleted: true, tone: null, exists: false }
     }
     return out
   }
@@ -1017,6 +1053,10 @@ export class Store {
     const order = parseTokens(raw.text)
     outgoingIds.sort((a, b) => order.indexOf(a) - order.indexOf(b))
     const relationLinks = raw.kind === 'relation' ? this.getRelationLinks({ relationId: id }) : []
+    const suggestedCategory =
+      backlinks.length && !this.#liveCategory(raw) && (raw.kind === 'item' || raw.kind === 'place' || raw.kind === 'person')
+        ? this.#categorySuggester()(id)
+        : null
     for (const l of relationLinks) for (const tok of parseTokens(l.source.text)) tokenIds.add(tok)
     const allRefs = relationLinks.length ? this.getRefs([...tokenIds]) : refs
     return {
@@ -1027,6 +1067,7 @@ export class Store {
       outgoing: outgoingIds.map((o) => refs[o]),
       backlinks,
       relationLinks,
+      suggestedCategory,
     }
   }
 
@@ -1135,6 +1176,7 @@ export class Store {
       if (r.deleted_at !== null || exclude.has(r.id)) continue
       if (kinds && !kinds.has(r.kind)) continue
       if (!wantRelations && (relationIds.has(r.id) || relationIds.has(parentOf.get(r.id) ?? ''))) continue
+      if (r.kind === 'category' && !kinds?.has('category')) continue
       if (r.id === NO_RELATION_ID) continue
       const label = res.label(r.id) ?? ''
       if (!label && q) continue
@@ -1142,7 +1184,7 @@ export class Store {
       if (q) {
         const s = fuzzyScore(q, label)
         if (s === null) continue
-        score = s + (r.kind === 'place' || r.kind === 'person' ? 8 : r.kind === 'pad' ? 4 : 0) - (r.done ? 10 : 0)
+        score = s + (effectiveCategory(r) ? 8 : r.kind === 'pad' ? 4 : 0) - (r.done ? 10 : 0)
       } else {
         if (!label) continue
         score = r.updated_at / 1e12 + (r.kind === 'item' ? 0 : 1)
@@ -1158,7 +1200,7 @@ export class Store {
         p = parentOf.get(p)
       }
       const context = crumbs.length > 3 ? [crumbs[0], '…', crumbs[crumbs.length - 1]].join(' › ') : crumbs.join(' › ')
-      return { id: r.id, kind: r.kind, label, done: !!r.done, context, score }
+      return { id: r.id, kind: r.kind, label, done: !!r.done, context, score, category: effectiveCategory(r) }
     })
   }
 
@@ -1218,12 +1260,15 @@ export class Store {
       if (e.type === 'child' && numbered.has(e.src) && order.has(e.dst)) e.index = order.get(e.dst)
     }
     const refs = this.getRefs(ids)
+    const refRows = this.#rawMany(ids)
     const nodes: GraphNode[] = ids.map((n) => ({
       id: n,
       kind: refs[n].kind,
       label: refs[n].label,
       done: refs[n].done,
       task: refs[n].task,
+      tone: refs[n].tone,
+      category: refs[n].tone != null ? effectiveCategory(refRows.get(n)!) : null,
       hop: hopOf.get(n)!,
     }))
     return { center: id, nodes, edges, truncated }
@@ -1277,6 +1322,249 @@ export class Store {
       nodeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM nodes WHERE deleted_at IS NULL')?.c ?? 0,
       edgeCount: this.db.get<{ c: number }>('SELECT count(*) AS c FROM edges')?.c ?? 0,
     }
+  }
+
+  // ------------------------------------------------------------- contexts
+  //
+  // A context is something you link to and come back to: a place, a person, a
+  // room, a project. Its kind is a 'category' node (Places, Rooms…, with
+  // settings in props), and nodes.category says which; older place/person
+  // nodes belong to the built-in Places/People. Any node can become one where
+  // it is: contexts stay in your lists. Kinds are suggested from evidence: a
+  // node gets the kind whose contexts you link to the same way.
+
+  #categoryMap(): Map<string, { name: string; icon: string; pinned: boolean; tone: number; created: number }> {
+    const out = new Map<string, { name: string; icon: string; pinned: boolean; tone: number; created: number }>()
+    for (const r of this.db.all<{ id: string; text: string; props: string | null; created_at: number; sort_key: string | null }>(
+      `SELECT id, text, props, created_at, sort_key FROM nodes WHERE kind = 'category' AND deleted_at IS NULL ORDER BY created_at, id`,
+    )) {
+      let p: CategoryProps = {}
+      try {
+        p = r.props ? JSON.parse(r.props) : {}
+      } catch {
+        p = {}
+      }
+      out.set(r.id, {
+        name: cleanLabel(r.text) || 'Untitled',
+        icon: typeof p.icon === 'string' ? p.icon : 'tag',
+        pinned: !!p.pinned,
+        tone: typeof p.tone === 'number' ? p.tone : 2 + (parseInt(r.id.slice(0, 4), 16) % 4),
+        created: r.created_at,
+      })
+    }
+    return out
+  }
+
+  /** The node's kind of context, if that kind still exists. */
+  #liveCategory(r: Pick<RawNode, 'kind' | 'category'>, cats = this.#categoryMap()): string | null {
+    const c = effectiveCategory(r)
+    return c && cats.has(c) ? c : null
+  }
+
+  /** Open and total links into each of these nodes (live sources only). */
+  #linkCounts(ids: string[]): Map<string, { open: number; total: number }> {
+    const out = new Map<string, { open: number; total: number }>()
+    if (!ids.length) return out
+    for (const r of this.db.all<{ dst: string; total: number; open: number }>(
+      `SELECT e.dst, count(*) AS total, sum(CASE WHEN s.task = 1 AND s.done = 0 THEN 1 ELSE 0 END) AS open
+       FROM edges e JOIN nodes s ON s.id = e.src
+       WHERE e.type = 'link' AND s.deleted_at IS NULL AND e.dst IN (SELECT value FROM json_each(?))
+       GROUP BY e.dst`,
+      [JSON.stringify(ids)],
+    )) {
+      out.set(r.dst, { open: r.open, total: r.total })
+    }
+    return out
+  }
+
+  /** Your kinds of context, the built-ins first, with how many contexts and open to-dos each has. */
+  listCategories(): CategoryInfo[] {
+    const cats = this.#categoryMap()
+    const members = this.db.all<{ id: string; kind: Kind; category: string | null }>(
+      `SELECT id, kind, category FROM nodes WHERE deleted_at IS NULL AND kind NOT IN ('pad', 'relation', 'category')
+         AND (category IS NOT NULL OR kind IN ('place', 'person'))`,
+    )
+    const byCat = new Map<string, string[]>()
+    for (const m of members) {
+      const c = this.#liveCategory(m, cats)
+      if (c) byCat.set(c, [...(byCat.get(c) ?? []), m.id])
+    }
+    const counts = this.#linkCounts(members.map((m) => m.id))
+    return [...cats].map(([id, c]) => {
+      const ids = byCat.get(id) ?? []
+      return {
+        id,
+        name: c.name,
+        icon: c.icon,
+        pinned: c.pinned,
+        tone: c.tone,
+        count: ids.length,
+        open: ids.reduce((n, m) => n + (counts.get(m)?.open ?? 0), 0),
+      }
+    })
+  }
+
+  #contextEntries(rows: RawNode[], suggest?: (id: string) => string | null): ContextEntry[] {
+    const res = this.#labelResolver(new Map(rows.map((r) => [r.id, r])))
+    res.ensure(rows.flatMap((r) => parseTokens(r.text)))
+    const counts = this.#linkCounts(rows.map((r) => r.id))
+    const cats = this.#categoryMap()
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      label: res.label(r.id) ?? '',
+      category: this.#liveCategory(r, cats),
+      suggested: suggest ? suggest(r.id) : null,
+      openBacklinks: counts.get(r.id)?.open ?? 0,
+      totalBacklinks: counts.get(r.id)?.total ?? 0,
+      updated_at: r.updated_at,
+    }))
+  }
+
+  /** The contexts of one kind, alphabetically. */
+  listContexts(categoryId: string): ContextEntry[] {
+    const legacy = categoryId === PLACES_ID ? 'place' : categoryId === PEOPLE_ID ? 'person' : '-'
+    const rows = this.db.all<RawNode>(
+      `SELECT ${NODE_COLS} FROM nodes WHERE deleted_at IS NULL AND kind NOT IN ('pad', 'relation', 'category')
+         AND (category = ? OR (category IS NULL AND kind = ?))`,
+      [categoryId, legacy],
+    )
+    return this.#contextEntries(rows).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  }
+
+  /** Things you link to that aren't a kind of context yet, most linked first, with a suggested kind. */
+  listOtherContexts(): ContextEntry[] {
+    const cats = this.#categoryMap()
+    const rows = this.db
+      .all<RawNode>(
+        `SELECT DISTINCT ${NODE_COLS.split(', ').map((c) => 'n.' + c).join(', ')}
+         FROM nodes n JOIN edges e ON e.dst = n.id AND e.type = 'link' JOIN nodes s ON s.id = e.src
+         WHERE n.deleted_at IS NULL AND s.deleted_at IS NULL AND n.kind IN ('item', 'place', 'person')`,
+      )
+      .filter((r) => !this.#liveCategory(r, cats))
+    const suggest = this.#categorySuggester()
+    return this.#contextEntries(rows, suggest).sort(
+      (a, b) => b.openBacklinks - a.openBacklinks || b.totalBacklinks - a.totalBacklinks || a.label.localeCompare(b.label),
+    )
+  }
+
+  /**
+   * Suggest a kind from how a node is linked to: each kind has a profile of
+   * the relations pointing at its contexts ("buy at", "return to" for Places;
+   * "ask", "owes" for People). A node whose own links mostly match a profile
+   * gets that kind.
+   */
+  #categorySuggester(): (id: string) => string | null {
+    const cats = this.#categoryMap()
+    const links = this.#allLinks().filter((l) => l.phrase)
+    const targets = this.#rawMany([...new Set(links.map((l) => l.dst))])
+    const profiles = new Map<string, Map<string, number>>()
+    const own = new Map<string, Map<string, number>>()
+    const bump = (m: Map<string, Map<string, number>>, k: string, phrase: string) => {
+      if (!m.has(k)) m.set(k, new Map())
+      m.get(k)!.set(phrase, (m.get(k)!.get(phrase) ?? 0) + 1)
+    }
+    for (const l of links) {
+      const t = targets.get(l.dst)
+      if (!t) continue
+      const c = this.#liveCategory(t, cats)
+      if (c) bump(profiles, c, l.phrase!)
+      bump(own, l.dst, l.phrase!)
+    }
+    return (id) => {
+      const mine = own.get(id)
+      if (!mine) return null
+      const total = [...mine.values()].reduce((a, b) => a + b, 0)
+      let best: string | null = null
+      let bestScore = 0
+      for (const [cat, prof] of profiles) {
+        const size = [...prof.values()].reduce((a, b) => a + b, 0)
+        let score = 0
+        for (const [phrase, n] of mine) score += n * ((prof.get(phrase) ?? 0) / size)
+        score /= total
+        if (score > bestScore) {
+          bestScore = score
+          best = cat
+        }
+      }
+      return bestScore >= 0.2 ? best : null
+    }
+  }
+
+  /** A new kind of context. */
+  createCategory(name: string, opts: { icon?: string; pinned?: boolean; id?: string } = {}): string {
+    return this.db.tx(() => {
+      const label = cleanLabel(name)
+      if (!label) throw new StoreError('A kind needs a name', 'empty')
+      const n = this.db.get<{ c: number }>(`SELECT count(*) AS c FROM nodes WHERE kind = 'category'`)?.c ?? 0
+      const id = this.#insertNode('category', label, null, opts.id)
+      const props: CategoryProps = { icon: opts.icon ?? 'tag', pinned: !!opts.pinned, tone: 2 + (n % 4) }
+      this.db.exec('UPDATE nodes SET props = ? WHERE id = ?', [JSON.stringify(props), id])
+      return id
+    })
+  }
+
+  /** Change a kind's icon or whether it has a tab in the bar. */
+  setCategoryProps(id: string, patch: CategoryProps): void {
+    this.db.tx(() => {
+      const r = this.#requireLive(id)
+      if (r.kind !== 'category') throw new StoreError('Not a kind of context', 'not_category')
+      let props: CategoryProps = {}
+      try {
+        props = r.props ? JSON.parse(r.props) : {}
+      } catch {
+        props = {}
+      }
+      this.db.exec('UPDATE nodes SET props = ?, updated_at = ? WHERE id = ?', [
+        JSON.stringify({ ...props, ...patch }),
+        this.#now(),
+        id,
+      ])
+    })
+  }
+
+  /** Make a node a context of some kind, where it is (null: not a context any more). */
+  setCategory(id: string, categoryId: string | null): void {
+    this.db.tx(() => {
+      const r = this.#requireLive(id)
+      if (r.kind === 'pad' || r.kind === 'relation' || r.kind === 'category') {
+        throw new StoreError('Pads and relations can’t be contexts', 'not_context')
+      }
+      if (categoryId) {
+        const c = this.#raw(categoryId)
+        if (!c || c.kind !== 'category' || c.deleted_at !== null) throw new StoreError('No such kind', 'not_found')
+      }
+      this.db.exec('UPDATE nodes SET category = ?, updated_at = ? WHERE id = ?', [categoryId, this.#now(), id])
+      // Older places and people belong to their kind by their node kind; make them plain too.
+      if (!categoryId && (r.kind === 'place' || r.kind === 'person')) this.setKind(id, 'item')
+    })
+  }
+
+  /** A new standalone context of a kind (from a kind's page, or the link picker). */
+  createContext(text: string, categoryId: string, id?: string): string {
+    return this.db.tx(() => {
+      const nid = this.#insertNode('item', text, null, id)
+      this.setCategory(nid, categoryId)
+      return nid
+    })
+  }
+
+  /**
+   * Turn a line into a context. A line inside a list becomes a link to a new
+   * standalone context with its text (so the list keeps reading the same); a
+   * standalone node just gets the kind. Returns the context's id.
+   */
+  convertToContext(id: string, categoryId: string, newId?: string): string {
+    return this.db.tx(() => {
+      const n = this.#requireLive(id)
+      if (!this.#parentEdge(id)) {
+        this.setCategory(id, categoryId)
+        return id
+      }
+      const ctx = this.createContext(n.text, categoryId, newId)
+      this.updateText(id, makeToken(ctx))
+      return ctx
+    })
   }
 
   // ------------------------------------------------------------ relations
@@ -1519,9 +1807,17 @@ export class Store {
     const r = this.#raw(id)
     if (!r) return null
     const pe = this.#parentEdge(id)
+    let props: unknown = null
+    try {
+      props = r.props ? JSON.parse(r.props) : null
+    } catch {
+      props = null
+    }
     return {
       rels: this.#rels(id),
       link_rels: this.#linkRels(id),
+      category: r.category,
+      props,
       kind: r.kind,
       text: r.text,
       done: r.done,
@@ -1559,10 +1855,11 @@ export class Store {
    */
   syncPrepareJoin(): boolean {
     return this.db.tx(() => {
-      if (!this.db.get('SELECT 1 FROM nodes LIMIT 1')) return false
+      const builtIn = JSON.stringify([PLACES_ID, PEOPLE_ID])
+      if (!this.db.get('SELECT 1 FROM nodes WHERE id NOT IN (SELECT value FROM json_each(?)) LIMIT 1', [builtIn])) return false
       if (this.db.get(`SELECT 1 FROM sync_clock WHERE hlc <> '${ZERO_HLC}' LIMIT 1`)) return false
       this.db.exec('DELETE FROM edges')
-      this.db.exec('DELETE FROM nodes')
+      this.db.exec('DELETE FROM nodes WHERE id NOT IN (SELECT value FROM json_each(?))', [builtIn])
       this.db.exec(`DELETE FROM meta WHERE key = 'inbox_id'`)
       return true
     })
@@ -1812,7 +2109,7 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       for (const n of file.nodes) {
         this.db.exec(
-          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO nodes (${NODE_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             n.id,
             n.kind,
@@ -1826,6 +2123,8 @@ export class Store {
             n.numbered,
             n.task,
             n.purged,
+            n.category,
+            n.props,
           ],
         )
       }
@@ -1839,6 +2138,8 @@ export class Store {
           e.created_at,
         ])
       }
+      // Files from before kinds of context don't have the built-in ones.
+      this.#ensureBuiltInCategories()
       // Links are derived from text: rebuild them (with their phrases) rather than trust the file.
       for (const r of this.db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE instr(text, '[[') > 0`)) {
         this.#reconcileLinks(r.id, r.text)
@@ -1896,6 +2197,8 @@ export function validateExport(data: unknown): ExportFile {
       numbered: n.numbered ? 1 : 0,
       task: task ? 1 : 0,
       purged: n.purged ? 1 : 0,
+      category: isStr(n.category) ? n.category : null,
+      props: isStr(n.props) ? n.props : null,
     })
   }
 

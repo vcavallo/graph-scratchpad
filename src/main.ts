@@ -8,10 +8,12 @@ import { persistOnFirstRun } from './lib/storage'
 import { trackKeyboard } from './lib/viewport'
 import { startSyncTriggers } from './state/sync'
 import { trackInstall } from './lib/install'
+import { startCategories } from './state/categories'
 
 startDb()
 startSyncTriggers()
 trackInstall()
+startCategories()
 trackKeyboard()
 void persistOnFirstRun()
 

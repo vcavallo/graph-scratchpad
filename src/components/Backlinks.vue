@@ -128,7 +128,7 @@ const crumbText = (b: Backlink) => b.crumbs.map((c) => c.label || 'Untitled').jo
     <ul v-if="mentions.length" class="backlink-list mentions">
       <li v-for="b in mentions" :key="b.source.id" class="backlink mention">
         <span class="backlink-mark" :class="`kind-${b.source.kind}`" aria-hidden="true">
-          <KindIcon v-if="b.source.kind !== 'item'" :kind="b.source.kind" :size="16" />
+          <KindIcon v-if="b.source.kind !== 'item' || b.source.category" :kind="b.source.kind" :category="b.source.category" :size="16" />
           <span v-else class="dot" />
         </span>
         <div class="backlink-body" @click="router.push(`/n/${b.source.id}`)">

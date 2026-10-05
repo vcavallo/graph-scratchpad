@@ -1,8 +1,25 @@
 // Types shared by the worker-side data layer and the UI.
 // Everything here must be structured-cloneable (it crosses postMessage).
 
-export type Kind = 'pad' | 'item' | 'place' | 'person' | 'relation'
-export const KINDS: readonly Kind[] = ['pad', 'item', 'place', 'person', 'relation']
+export type Kind = 'pad' | 'item' | 'place' | 'person' | 'relation' | 'category'
+export const KINDS: readonly Kind[] = ['pad', 'item', 'place', 'person', 'relation', 'category']
+
+/**
+ * The kinds of context everyone starts with (migration 9). Fixed ids, so every
+ * device has the same two; older place/person nodes belong to them.
+ */
+export const PLACES_ID = '00000000-0000-4000-8000-0000000c0001'
+export const PEOPLE_ID = '00000000-0000-4000-8000-0000000c0002'
+
+/** Settings of a kind of context (a 'category' node), kept as JSON in nodes.props. */
+export interface CategoryProps {
+  /** Icon name (see Icon.vue). */
+  icon?: string
+  /** Has a tab in the bottom bar. */
+  pinned?: boolean
+  /** Colour of its contexts' chips and graph nodes (0 green, 1 pink, 2–5 others). */
+  tone?: number
+}
 
 /**
  * The relation that means "not a relation": phrases filed under it label
@@ -29,6 +46,10 @@ export interface RawNode {
   task: number
   /** 1 once emptied from the trash; the row stays so the deletion can sync. */
   purged: number
+  /** The kind of context this is: a 'category' node's id (migration 9). */
+  category: string | null
+  /** For a 'category' node: its CategoryProps as JSON. */
+  props: string | null
 }
 
 /** A row of `edges` as stored. */
@@ -52,6 +73,8 @@ export interface NodeInfo {
   deleted: boolean
   numbered: boolean
   task: boolean
+  /** The kind of context this is (a category id), or null: not a context. */
+  category: string | null
 }
 
 export interface TreeNode {
@@ -66,6 +89,8 @@ export interface TreeNode {
   task: boolean
   /** Live links pointing at this node, not counting finished to-dos. */
   links: number
+  /** The kind of context this is, if it's one. */
+  category: string | null
   children: TreeNode[]
 }
 
@@ -78,6 +103,8 @@ export interface RefInfo {
   done: boolean
   task: boolean
   deleted: boolean
+  /** Colour of its chip when it's a context (see CategoryProps.tone), else null. */
+  tone: number | null
   /** False when the token points at an id that doesn't exist at all. */
   exists: boolean
 }
@@ -112,6 +139,8 @@ export interface NodeViewData {
   backlinks: Backlink[]
   /** For a relation: every link labelled with it. */
   relationLinks: RelationLink[]
+  /** For something you link to that has no kind yet: the kind its links suggest. */
+  suggestedCategory: string | null
 }
 
 export interface PadSummary {
@@ -145,6 +174,8 @@ export interface SearchResult {
   /** Breadcrumb text such as "Groceries › Produce"; empty for roots. */
   context: string
   score: number
+  /** Its kind of context, if it's one. */
+  category: string | null
 }
 
 /** A row in the move browser. */
@@ -169,6 +200,10 @@ export interface GraphNode {
   label: string
   done: boolean
   task: boolean
+  /** Colour when it's a context. */
+  tone: number | null
+  /** Its kind of context, if it's one. */
+  category: string | null
   hop: number
 }
 
@@ -180,6 +215,32 @@ export interface GraphEdge {
   index?: number
   /** For links: what the link means (your relation, or a suggestion). */
   phrase?: string | null
+}
+
+/** A kind of context: Places, People, Rooms, Projects… */
+export interface CategoryInfo {
+  id: string
+  name: string
+  icon: string
+  pinned: boolean
+  tone: number
+  /** Contexts of this kind. */
+  count: number
+  /** Open to-dos linking to them. */
+  open: number
+}
+
+/** Something you link to: a context of some kind, or one that could be. */
+export interface ContextEntry {
+  id: string
+  kind: Kind
+  label: string
+  category: string | null
+  /** For one with no kind yet: the kind its links suggest. */
+  suggested: string | null
+  openBacklinks: number
+  totalBacklinks: number
+  updated_at: number
 }
 
 /** A relation you've kept, with the other ways you write it. */

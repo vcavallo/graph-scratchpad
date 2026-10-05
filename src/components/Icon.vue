@@ -42,6 +42,13 @@ const PATHS: Record<string, string> = {
   checkbox: 'M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8.5 12.5l2.5 2.5 4.5-5',
   linked: `${circle(17.5, 12, 3.5)}M3 12h9M9 8.5l3.5 3.5L9 15.5`,
   sync: 'M19.5 10A7.5 7.5 0 0 0 6 6.5L4 8.5M4 4v4.5h4.5M4.5 14A7.5 7.5 0 0 0 18 17.5l2-2M20 20v-4.5h-4.5',
+  home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5',
+  folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z',
+  tag: 'M3 12V4h8l9 9-8 8-9-9zM7.5 8h.01',
+  box: 'M3 8l9-5 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v8',
+  star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9L12 3z',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  grid: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
 }
 
 const props = withDefaults(defineProps<{ name: string; size?: number; stroke?: number }>(), { size: 22, stroke: 2 })

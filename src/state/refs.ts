@@ -17,6 +17,7 @@ export function mergeRefs(refs: Record<string, RefInfo>): void {
       old.kind !== r.kind ||
       old.deleted !== r.deleted ||
       old.done !== r.done ||
+      old.tone !== r.tone ||
       old.exists !== r.exists
     ) {
       refCache[id] = r
