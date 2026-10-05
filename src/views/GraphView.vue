@@ -176,7 +176,9 @@ function update(d: Neighborhood) {
     }
     Object.assign(node, n)
     node.order = orderOf.get(n.id) ?? null
-    node.r = n.id === d.center ? RADIUS[n.kind] + 5 : node.order !== null ? 10 : RADIUS[n.kind]
+    // Contexts (places, people, rooms…) are drawn alike, whatever their node kind.
+    const base = n.tone != null ? RADIUS.place : RADIUS[n.kind]
+    node.r = n.id === d.center ? base + 5 : node.order !== null ? 10 : base
     // Numbered items always get a label: the order is the point.
     node.text = !busy || major || node.order !== null ? truncate(n.label, n.id === d.center ? 26 : 22) : ''
     // The focus stays put; everything else is free (unless being dragged).

@@ -3,11 +3,12 @@
 A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device, and it syncs between your devices through a small server of your own when it can reach one.
 
 <p align="center">
-  <img src="docs/screenshots/outline.png" width="300" alt="A pad called Saturday: a numbered list of to-dos with chips linking to places, a person, a grocery list and a waiting state; a grocery checklist showing 1/3 done and 1 link; plain bullet notes">
-  <img src="docs/screenshots/graph.png" width="300" alt="The graph around Saturday, three steps out: the numbered list as an ordered column, to-dos as boxes, notes as circles, the done items dimmed, and dashed links to two places, a person and the waiting state">
+  <img src="docs/screenshots/outline.png" width="260" alt="A pad called Saturday: a numbered list of to-dos and a grocery checklist, with links coloured by what they point at: green places, a pink person, an amber room. The bottom bar has tabs for Places and Rooms.">
+  <img src="docs/screenshots/context.png" width="260" alt="The Hardware store page: four open to-dos that link to it, labelled by relation. Two are buy at, a relation kept (one was written pick up at); grab at and return to are suggestions, outlined. Chips at the top filter by relation.">
+  <img src="docs/screenshots/graph.png" width="260" alt="The graph around Saturday, three steps out: the numbered list as an ordered column, to-dos as boxes, notes as circles, and dashed links labelled with their relation to places, a person, a room and a waiting state.">
 </p>
 
-A pad with a numbered list, to-dos and plain notes, and links to places, a person and a "waiting" state (left), and the same pad's graph three steps out (right). `npm run screenshots` rebuilds both from example data.
+A pad with to-dos, notes and links to contexts of different kinds: places, a person, and a room from a kind of context you made, with its own tab (left). A place's page, with what links there labelled by relation; *buy at* is one you kept ("pick up at" counts as it too), the outlined ones are suggestions (middle). The pad's graph, with links labelled (right). `npm run screenshots` rebuilds all three from example data.
 
 Inside, it’s still `graph-scratchpad`: the repo, the on-device database, export files, and the servers’ paths and services.
 
