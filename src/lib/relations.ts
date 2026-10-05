@@ -7,8 +7,11 @@
 
 import { splitTokens } from './tokens'
 
-/** Bump when the guessing changes, so stored phrases are recomputed. */
-export const PHRASES_VERSION = '1'
+/**
+ * Bump when the guessing changes, so the Store recomputes what it derives
+ * from link text (phrases; and nodes.ref, since version 2).
+ */
+export const PHRASES_VERSION = '2'
 
 export interface LinkContext {
   /** Up to six words before the link, within its clause, as written. */

@@ -1889,3 +1889,26 @@ body:has(.edit-toolbar) .toasts {
   stroke: var(--hl-t5-ink);
 }
 
+
+/* Lists this item is pulled into (lines that are nothing but a link to it). */
+.also-on {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.also-on-label {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.also-on-place {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+}

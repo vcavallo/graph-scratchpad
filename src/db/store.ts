@@ -1,7 +1,7 @@
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { SqlDb } from './sql'
 import { LATEST_SCHEMA_VERSION, migrate, schemaVersion } from './migrations'
-import { labelize, makeToken, parseTokens } from '../lib/tokens'
+import { labelize, makeToken, parseTokens, soleLink } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
 import { PHRASES_VERSION, linkContexts } from '../lib/relations'
 import { textHash } from '../lib/textHash'
@@ -320,6 +320,10 @@ export class Store {
    * each with the relation its wording suggests.
    */
   #reconcileLinks(id: string, text: string): void {
+    // A line that is only a link stands for what it links to (migration 10).
+    const sole = soleLink(text)
+    const ref = sole && sole !== id ? sole : null
+    this.db.exec('UPDATE nodes SET ref = ? WHERE id = ? AND ref IS NOT ?', [ref, id, ref])
     const wanted = new Set(parseTokens(text).filter((t) => t !== id))
     const contexts = wanted.size ? linkContexts(text) : new Map()
     // The server's label wins while it was read from this exact text; otherwise our own guess.
@@ -896,7 +900,15 @@ export class Store {
   /** The node and its live descendants as a nested tree. */
   getTree(rootId: string): TreeNode {
     const rows = this.db.all<
-      RawNode & { parent: string | null; edge_key: string | null; edge_id: string | null; links: number }
+      RawNode & {
+        parent: string | null
+        edge_key: string | null
+        edge_id: string | null
+        links: number
+        ref_id: string | null
+        ref_task: number | null
+        ref_done: number | null
+      }
     >(
       `WITH RECURSIVE sub(id) AS (
          SELECT ?
@@ -907,9 +919,11 @@ export class Store {
        SELECT n.id, n.kind, n.text, n.done, n.collapsed, n.created_at, n.updated_at, n.deleted_at, n.sort_key,
               n.numbered, n.task, n.category, n.props, pe.src AS parent, pe.sort_key AS edge_key, pe.id AS edge_id,
               (SELECT count(*) FROM edges l JOIN nodes s ON s.id = l.src
-                 WHERE l.dst = n.id AND l.type = 'link' AND s.deleted_at IS NULL AND s.done = 0) AS links
+                 WHERE l.dst = n.id AND l.type = 'link' AND s.deleted_at IS NULL AND s.done = 0) AS links,
+              t.id AS ref_id, t.task AS ref_task, t.done AS ref_done
        FROM sub JOIN nodes n ON n.id = sub.id
-       LEFT JOIN edges pe ON pe.dst = n.id AND pe.type = 'child'`,
+       LEFT JOIN edges pe ON pe.dst = n.id AND pe.type = 'child'
+       LEFT JOIN nodes t ON t.id = n.ref AND t.deleted_at IS NULL`,
       [rootId],
     )
     const byId = new Map<string, TreeNode & { _key: string; _edge: string }>()
@@ -918,12 +932,14 @@ export class Store {
         id: r.id,
         kind: r.kind,
         text: r.text,
-        done: !!r.done,
+        // A line that's only a link is the linked item: its checkbox, its done.
+        done: r.ref_id ? !!r.ref_done : !!r.done,
         collapsed: !!r.collapsed,
         numbered: !!r.numbered,
-        task: !!r.task,
+        task: r.ref_id ? !!r.ref_task : !!r.task,
         links: r.links,
         category: effectiveCategory(r),
+        ref: r.ref_id,
         children: [],
         _key: r.edge_key ?? '',
         _edge: r.edge_id ?? '',
@@ -949,6 +965,7 @@ export class Store {
         task: t.task,
         links: t.links,
         category: t.category,
+        ref: t.ref,
         children: kids.map(strip),
       }
     }
@@ -1006,8 +1023,8 @@ export class Store {
   }
 
   getBacklinks(id: string): Backlink[] {
-    const rows = this.db.all<RawNode & { phrase: string | null }>(
-      `SELECT ${NODE_COLS.split(', ').map((c) => 's.' + c).join(', ')}, e.phrase
+    const rows = this.db.all<RawNode & { phrase: string | null; ref: string | null }>(
+      `SELECT ${NODE_COLS.split(', ').map((c) => 's.' + c).join(', ')}, e.phrase, s.ref
        FROM edges e JOIN nodes s ON s.id = e.src
        WHERE e.dst = ? AND e.type = 'link' AND s.deleted_at IS NULL`,
       [id],
@@ -1015,6 +1032,7 @@ export class Store {
     const vocab = this.#vocab()
     const out: Backlink[] = rows.map((r) => ({
       source: toInfo(r),
+      alsoOn: r.ref === id,
       suggested: r.phrase,
       ...this.#resolve(vocab, r.phrase, this.#linkRels(r.id)[id]),
       crumbs: this.getAncestors(r.id),
@@ -1083,9 +1101,11 @@ export class Store {
          WHERE e.type = 'child' AND c.deleted_at IS NULL
        )
        SELECT d.pad AS pad, count(*) - 1 AS items,
-              sum(CASE WHEN n.task = 1 AND n.id != d.pad THEN 1 ELSE 0 END) AS tasks,
-              sum(CASE WHEN n.task = 1 AND n.done = 0 AND n.id != d.pad THEN 1 ELSE 0 END) AS open
-       FROM d JOIN nodes n ON n.id = d.id GROUP BY d.pad`,
+              sum(CASE WHEN coalesce(t.task, n.task) = 1 AND n.id != d.pad THEN 1 ELSE 0 END) AS tasks,
+              sum(CASE WHEN coalesce(t.task, n.task) = 1 AND coalesce(t.done, n.done) = 0 AND n.id != d.pad THEN 1 ELSE 0 END) AS open
+       FROM d JOIN nodes n ON n.id = d.id
+       LEFT JOIN nodes t ON t.id = n.ref AND t.deleted_at IS NULL
+       GROUP BY d.pad`,
     )
     const byPad = new Map(counts.map((c) => [c.pad, c]))
     const res = this.#labelResolver(new Map(pads.map((p) => [p.id, p])))
@@ -1177,6 +1197,8 @@ export class Store {
       if (kinds && !kinds.has(r.kind)) continue
       if (!wantRelations && (relationIds.has(r.id) || relationIds.has(parentOf.get(r.id) ?? ''))) continue
       if (r.kind === 'category' && !kinds?.has('category')) continue
+      // A line that's only a link is that item again, not something to find twice.
+      if (r.kind === 'item' && soleLink(r.text)) continue
       if (r.id === NO_RELATION_ID) continue
       const label = res.label(r.id) ?? ''
       if (!label && q) continue
@@ -1366,7 +1388,7 @@ export class Store {
     const out = new Map<string, { open: number; total: number }>()
     if (!ids.length) return out
     for (const r of this.db.all<{ dst: string; total: number; open: number }>(
-      `SELECT e.dst, count(*) AS total, sum(CASE WHEN s.task = 1 AND s.done = 0 THEN 1 ELSE 0 END) AS open
+      `SELECT e.dst, count(*) AS total, sum(CASE WHEN s.task = 1 AND s.done = 0 AND s.ref IS NULL THEN 1 ELSE 0 END) AS open
        FROM edges e JOIN nodes s ON s.id = e.src
        WHERE e.type = 'link' AND s.deleted_at IS NULL AND e.dst IN (SELECT value FROM json_each(?))
        GROUP BY e.dst`,

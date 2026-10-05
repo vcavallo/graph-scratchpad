@@ -13,6 +13,14 @@ export function makeToken(id: string): string {
   return `[[${id}]]`
 }
 
+const SOLE_LINK_RE = new RegExp(`^\\s*${TOKEN_RE_SOURCE}\\s*$`)
+
+/** The id a line links to when the link is all there is on it, else null. */
+export function soleLink(text: string): string | null {
+  const m = SOLE_LINK_RE.exec(text)
+  return m ? m[1].toLowerCase() : null
+}
+
 /** Unique link target ids in order of first appearance (lowercased). */
 export function parseTokens(text: string): string[] {
   const seen = new Set<string>()

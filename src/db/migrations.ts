@@ -184,6 +184,14 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
         WHERE n.id IN ('00000000-0000-4000-8000-0000000c0001', '00000000-0000-4000-8000-0000000c0002');
     `,
   },
+  {
+    // A line that is nothing but a link stands for what it links to: it shows
+    // that item's checkbox, and checking it off checks off the item. ref is
+    // the linked id for such lines. Derived from the text like link edges, so
+    // it isn't synced; the Store fills it in.
+    version: 10,
+    sql: `ALTER TABLE nodes ADD COLUMN ref TEXT;`,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

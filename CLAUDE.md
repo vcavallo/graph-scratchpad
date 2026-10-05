@@ -19,7 +19,7 @@ Core insight: **the outline already is a graph.** Nesting is a `child` edge from
 - **Durability:** Call `navigator.storage.persist()` on first run. JSON export/import exists early so data is never one cache-clear from loss.
 - **IDs:** UUIDv4 strings (`crypto.randomUUID()`), never positional.
 - **Sibling order:** Fractional indexing (the npm `fractional-indexing` package) stored as a string `sort_key` on `child` edges, so a reorder updates one row.
-- **Links are references, not mirrors.** A link points to another node; it doesn't make the node appear in two outlines. (Mirrors are a possible later feature.)
+- **Links are references, not mirrors**, with one exception: a line that is nothing but a link stands for the linked item (migration 10, `nodes.ref`, derived from text). It shows that item's checkbox and done state, checking it off checks off the item, counts use the item's state, and the item's backlinks list it as "Also on". Anything more on the line makes it an ordinary reference.
 - **Edges are the source of truth.** Node text contains link tokens of the form `[[<uuid>]]`, rendered as chips showing the target node's *current* text. When a node's text is saved, its outgoing `link` edges are reconciled to match the tokens in the text, adding missing edges and removing stale ones, inside one transaction.
 
 ## Data model
