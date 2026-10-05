@@ -16,6 +16,7 @@ export const router = createRouter({
     { path: '/search', component: () => import('./views/SearchView.vue') },
     { path: '/settings', component: () => import('./views/SettingsView.vue') },
     { path: '/trash', component: () => import('./views/TrashView.vue') },
+    { path: '/relations', component: () => import('./views/RelationsView.vue') },
     { path: '/:rest(.*)*', redirect: '/' },
   ],
   scrollBehavior(_to, _from, saved) {

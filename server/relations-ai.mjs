@@ -12,6 +12,8 @@
 
 const TOKEN = /\[\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]\]/g
 const SERVER_DEVICE = 'server'
+/** Must match NO_RELATION_ID in src/db/types.ts. */
+const NO_RELATION_ID = '00000000-0000-4000-8000-00000000a11a'
 
 /** FNV-1a, base 36. Must match src/lib/textHash.ts. */
 export function textHash(s) {
@@ -124,13 +126,37 @@ export class RelationLabeler {
     return out
   }
 
-  /** The relations in use, most common first: the model should reuse these. */
+  /**
+   * What the model should reuse: the relations you kept (first), then labels
+   * in use, most common first; the other ways you write your relations; and
+   * the phrases you said aren't relations.
+   */
   vocabulary(max = 40) {
+    const live = (id) => this.#sync.field(id, 'deleted_at') == null && !this.#sync.field(id, 'purged')
+    const relations = new Map() // id → name
+    for (const [id, kind] of this.#sync.allOf('kind')) {
+      const text = this.#sync.field(id, 'text')
+      if (kind === 'relation' && live(id) && typeof text === 'string' && text.trim()) relations.set(id, text.trim().toLowerCase())
+    }
+    const sameAs = {}
+    const notRelations = []
+    for (const [id, pos] of this.#sync.allOf('pos')) {
+      const text = this.#sync.field(id, 'text')
+      if (!pos?.p || !relations.has(pos.p) || !live(id) || typeof text !== 'string' || !text.trim()) continue
+      if (pos.p === NO_RELATION_ID) notRelations.push(text.trim().toLowerCase())
+      else sameAs[text.trim().toLowerCase()] = relations.get(pos.p)
+    }
+    const kept = [...relations].filter(([id]) => id !== NO_RELATION_ID).map(([, name]) => name)
     const counts = new Map()
     for (const [, rels] of this.#sync.allOf('rels')) {
       for (const v of Object.values(rels ?? {})) if (v?.r) counts.set(v.r, (counts.get(v.r) ?? 0) + 1)
     }
-    return [...counts].sort((a, b) => b[1] - a[1]).slice(0, max).map(([r]) => r)
+    const used = [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([r]) => sameAs[r] ?? r)
+      .filter((r) => !kept.includes(r) && !notRelations.includes(r))
+    const relationsList = [...new Set([...kept, ...used])].slice(0, max)
+    return { relations: relationsList, sameAs, notRelations }
   }
 
   /** What the model sees for one link: the line with that link marked ⟦like this⟧. */
@@ -216,7 +242,9 @@ For each item, name the relationship the line expresses toward the linked thing,
 
 - Read the whole line, including the words after the link.
 - Name the relationship, not the specific object: "buy 3/4-inch elbows at ⟦Hardware store⟧" is "buy at".
-- The vocabulary lists the phrases already in use. Reuse one whenever it means the same thing: prefer an existing "buy at" to "get at", "pick up at" or "grab at".
+- vocabulary.relations lists the phrases already in use, the person's own first. Reuse one whenever it means the same thing: prefer an existing "buy at" to "get at", "pick up at" or "grab at".
+- vocabulary.sameAs maps other wordings to the person's relation: answer with the relation, not the wording.
+- vocabulary.notRelations are wordings the person treats as plain mentions: answer null for those.
 - If the link is only a mention with no particular relationship, use null.
 - Answer for every id.`
 

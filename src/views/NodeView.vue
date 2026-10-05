@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import EditableText from '@/components/EditableText.vue'
 import Outline from '@/components/Outline.vue'
 import Backlinks from '@/components/Backlinks.vue'
+import RelationLinks from '@/components/RelationLinks.vue'
+import { pickRelation } from '@/lib/relationActions'
+import { NO_RELATION_ID } from '@/db/types'
 import EditToolbar from '@/components/EditToolbar.vue'
 import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
@@ -18,7 +21,7 @@ import { editing, focusEditor } from '@/state/focus'
 import { prefs } from '@/state/prefs'
 import { openLinkPicker } from '@/lib/linking'
 import { chipClass, chipLabel, type LineMarker, type Shortcut } from '@/lib/editorDom'
-import { confirmDialog, openPicker, openSheet, pickerState, reportError, toast, type SheetAction } from '@/state/ui'
+import { confirmDialog, openPicker, openSheet, pickerState, promptDialog, reportError, toast, type SheetAction } from '@/state/ui'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -64,6 +67,8 @@ watch(data, async (d) => {
 const node = computed(() => data.value?.node)
 const kind = computed<Kind>(() => node.value?.kind ?? 'item')
 const isHub = computed(() => kind.value === 'place' || kind.value === 'person')
+const isRelation = computed(() => kind.value === 'relation')
+const isNoRelation = computed(() => props.id === NO_RELATION_ID)
 const titleKey = computed(() => `title:${props.id}`)
 const titleFocused = computed(() => editing.key === titleKey.value)
 const parent = computed(() => data.value?.ancestors.at(-1))
@@ -75,6 +80,7 @@ const placeholder = computed(() =>
 const backTarget = computed(() => {
   if (parent.value) return { to: `/n/${parent.value.id}`, label: parent.value.label || 'Untitled' }
   if (kind.value === 'place') return { to: '/places', label: 'Places' }
+  if (kind.value === 'relation') return { to: '/relations', label: 'Relations' }
   if (kind.value === 'person') return { to: '/people', label: 'People' }
   return { to: '/pads', label: 'Pads' }
 })
@@ -206,8 +212,66 @@ async function convertToHub(k: 'place' | 'person') {
   }
 }
 
+/** Page menu for one of your relations: rename, merge, stop using it. */
+function openRelationMenu() {
+  const name = titleLabel.value
+  const actions: SheetAction[] = []
+  if (!isNoRelation.value) {
+    actions.push(
+      {
+        label: 'Rename…',
+        icon: 'edit',
+        run: async () => {
+          const next = await promptDialog({ title: `Rename “${name}”`, confirmLabel: 'Rename', value: name })
+          if (!next) return
+          const id = await api.renameRelation(props.id, next).catch(reportError)
+          if (id && id !== props.id) void router.replace(`/n/${id}`)
+        },
+      },
+      {
+        label: 'Merge into…',
+        icon: 'move',
+        run: () =>
+          pickRelation(
+            `Merge “${name}” into`,
+            (r) =>
+              void api
+                .mergeRelation(props.id, r.id)
+                .then(() => {
+                  toast(`“${name}” is now “${r.label}”`)
+                  void router.replace(`/n/${r.id}`)
+                })
+                .catch(reportError),
+            [props.id],
+          ),
+      },
+    )
+  }
+  actions.push(
+    { label: 'All relations', icon: 'list', run: () => void router.push('/relations') },
+    {
+      label: isNoRelation.value ? 'Forget all of these' : `Stop using “${name}”`,
+      icon: 'trash',
+      danger: true,
+      run: async () => {
+        const ok = await confirmDialog({
+          title: isNoRelation.value ? 'Forget these phrases?' : `Stop using “${name}”?`,
+          message: 'Links go back to their suggested labels. You can restore it from Trash.',
+          confirmLabel: isNoRelation.value ? 'Forget' : 'Stop using it',
+          danger: true,
+        })
+        if (!ok) return
+        await api.deleteSubtree(props.id).catch(reportError)
+        void router.replace('/relations')
+      },
+    },
+  )
+  openSheet({ title: name, actions })
+}
+
 function openMenu() {
   if (!node.value) return
+  if (isRelation.value) return openRelationMenu()
   const actions: SheetAction[] = [{ label: 'Show graph', icon: 'graph', run: () => router.push(`/n/${props.id}/graph`) }]
   if (kind.value === 'item') {
     actions.push(
@@ -314,7 +378,9 @@ onMounted(async () => {
           >
             <span class="box"><Icon v-if="node.done" name="check" :size="18" :stroke="3" /></span>
           </button>
+          <h1 v-if="isRelation" class="title static-title">{{ node.text || 'Untitled' }}</h1>
           <EditableText
+            v-else
             :key="id"
             class="title"
             :text="node.text"
@@ -333,9 +399,19 @@ onMounted(async () => {
         </div>
       </div>
 
+      <template v-if="isRelation && !node.deleted">
+        <RelationLinks
+          :links="data.relationLinks"
+          :heading="isNoRelation ? 'Links worded like these' : 'Links'"
+          @toggle="toggleBacklink"
+        />
+        <h2 class="section-title">{{ isNoRelation ? 'Wordings you treat as plain mentions' : 'Also written as' }}</h2>
+      </template>
+
       <Backlinks
-        v-if="linksFirst && (isHub || data.backlinks.length) && !node.deleted"
+        v-if="!isRelation && linksFirst && (isHub || data.backlinks.length) && !node.deleted"
         :backlinks="data.backlinks"
+        :target="id"
         heading="Linked here"
         @toggle="toggleBacklink"
       />
@@ -346,7 +422,7 @@ onMounted(async () => {
         ref="outline"
         :root="data.tree"
         :reload="reload"
-        :add-label="isHub ? 'note' : 'item'"
+        :add-label="isRelation ? 'wording' : isHub ? 'note' : 'item'"
         @exit-top="focusTitle"
       />
 
@@ -360,8 +436,9 @@ onMounted(async () => {
       </section>
 
       <Backlinks
-        v-if="!linksFirst && data.backlinks.length && !node.deleted"
+        v-if="!isRelation && !linksFirst && data.backlinks.length && !node.deleted"
         :backlinks="data.backlinks"
+        :target="id"
         heading="Linked here"
         @toggle="toggleBacklink"
       />

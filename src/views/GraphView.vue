@@ -113,7 +113,7 @@ function forceOrdered(strength = 0.35) {
 }
 const ordered = forceOrdered()
 
-const RADIUS: Record<Kind, number> = { pad: 13, item: 8, place: 12, person: 12 }
+const RADIUS: Record<Kind, number> = { pad: 13, item: 8, place: 12, person: 12, relation: 10 }
 const CHAR_W = 6.8
 
 const hops = ref(2)

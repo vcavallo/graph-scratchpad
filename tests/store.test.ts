@@ -3,6 +3,7 @@ import { makeDb, makeStore, shape } from './helpers'
 import type { Store } from '../src/db/store'
 import { MIGRATIONS, LATEST_SCHEMA_VERSION } from '../src/db/migrations'
 import { makeToken } from '../src/lib/tokens'
+import { NO_RELATION_ID } from '../src/db/types'
 
 let s: Store
 let pad: string
@@ -836,5 +837,92 @@ describe('import and link phrases', () => {
     const fresh = await makeStore()
     fresh.importAll(file)
     expect(fresh.getBacklinks(place).map((b) => b.phrase)).toEqual(['buy at'])
+  })
+})
+
+describe('your relations', () => {
+  function setupLinks() {
+    const shop = s.createNode('place', 'Shop')
+    const sam = s.createNode('person', 'Sam')
+    const t = makeToken
+    const a = s.createChild(pad, undefined, { text: `Buy elbows at ${t(shop)}` })
+    const b = s.createChild(pad, undefined, { text: `Pick up tape at ${t(shop)}` })
+    const c = s.createChild(pad, undefined, { text: `Get mulch from ${t(shop)}` })
+    const d = s.createChild(pad, undefined, { text: `Lunch with ${t(sam)}` })
+    return { shop, sam, a, b, c, d }
+  }
+  const labels = (dst: string) =>
+    Object.fromEntries(s.getBacklinks(dst).map((b) => [b.source.text.split(' ')[0], b.phrase]))
+
+  it('starts with suggestions only', () => {
+    const { shop } = setupLinks()
+    expect(labels(shop)).toEqual({ Buy: 'buy at', Pick: 'pick up at', Get: 'get from' })
+    const r = s.listRelations()
+    expect(r.relations).toEqual([])
+    expect(r.suggestions.map((x) => [x.phrase, x.count])).toContainEqual(['buy at', 1])
+  })
+
+  it('keeps a phrase, and folds other wordings into it', () => {
+    const { shop } = setupLinks()
+    const buy = s.keepRelation('buy at')
+    s.keepRelation('pick up at', 'buy at')
+    s.keepRelation('get from', 'Buy At')
+    expect(labels(shop)).toEqual({ Buy: 'buy at', Pick: 'buy at', Get: 'buy at' })
+    const [rel] = s.listRelations().relations
+    expect(rel).toMatchObject({ id: buy, name: 'buy at', count: 3 })
+    expect(rel.aliases.map((a) => a.text)).toEqual(['pick up at', 'get from'])
+    expect(s.getBacklinks(shop).every((b) => b.relationId === buy)).toBe(true)
+    expect(s.getRelationLinks({ relationId: buy }).map((l) => l.target.id)).toEqual([shop, shop, shop])
+    // Relations stay out of search and the link picker, unless asked for.
+    expect(s.search('buy').some((x) => x.kind === 'relation')).toBe(false)
+    expect(s.search('buy', { kinds: ['relation'] }).map((x) => x.id)).toEqual([buy])
+  })
+
+  it('renames a relation, and the old name still counts', () => {
+    const { shop } = setupLinks()
+    const buy = s.keepRelation('buy at')
+    s.renameRelation(buy, 'shop at')
+    expect(labels(shop).Buy).toBe('shop at')
+    expect(s.listRelations().relations[0].aliases.map((a) => a.text)).toEqual(['buy at'])
+    // Renaming onto another relation merges them.
+    const get = s.keepRelation('get from')
+    s.renameRelation(get, 'shop at')
+    expect(labels(shop)).toMatchObject({ Buy: 'shop at', Get: 'shop at' })
+    expect(s.listRelations().relations).toHaveLength(1)
+  })
+
+  it('merges relations, including links pinned to the one going away', () => {
+    const { shop, b } = setupLinks()
+    const buy = s.keepRelation('buy at')
+    const get = s.keepRelation('get from')
+    s.setLinkRelation(b, shop, get)
+    expect(labels(shop).Pick).toBe('get from')
+    s.mergeRelation(get, buy)
+    expect(labels(shop)).toEqual({ Buy: 'buy at', Pick: 'buy at', Get: 'buy at' })
+    expect(s.getBacklinks(shop).find((x) => x.source.id === b)?.pinned).toBe(true)
+  })
+
+  it('rules phrases out, and lets them back in', () => {
+    const { sam, d } = setupLinks()
+    s.ignorePhrase('with')
+    expect(s.getBacklinks(sam)[0]).toMatchObject({ phrase: null, relationId: NO_RELATION_ID, suggested: 'with' })
+    expect(s.listRelations().ignored.map((x) => x.text)).toEqual(['with'])
+    expect(s.listRelations().relations).toEqual([]) // "Not a relation" isn't listed as one
+    s.keepRelation('with', 'lunch with')
+    expect(s.getBacklinks(sam)[0].phrase).toBe('lunch with')
+    expect(s.listRelations().ignored).toEqual([])
+    s.setLinkRelation(d, sam, NO_RELATION_ID)
+    expect(s.getBacklinks(sam)[0]).toMatchObject({ phrase: null, pinned: true })
+    s.setLinkRelation(d, sam, null)
+    expect(s.getBacklinks(sam)[0]).toMatchObject({ phrase: 'lunch with', pinned: false })
+  })
+
+  it('pins a link to a relation even when its wording changes', () => {
+    const { shop, a } = setupLinks()
+    const get = s.keepRelation('get from')
+    s.setLinkRelation(a, shop, get)
+    s.updateText(a, `Order bolts from ${makeToken(shop)}`)
+    expect(s.getBacklinks(shop).find((x) => x.source.id === a)?.phrase).toBe('get from')
+    expect(s.getNeighborhood(a, 1).edges.find((e) => e.dst === shop)?.phrase).toBe('get from')
   })
 })

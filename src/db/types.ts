@@ -1,8 +1,14 @@
 // Types shared by the worker-side data layer and the UI.
 // Everything here must be structured-cloneable (it crosses postMessage).
 
-export type Kind = 'pad' | 'item' | 'place' | 'person'
-export const KINDS: readonly Kind[] = ['pad', 'item', 'place', 'person']
+export type Kind = 'pad' | 'item' | 'place' | 'person' | 'relation'
+export const KINDS: readonly Kind[] = ['pad', 'item', 'place', 'person', 'relation']
+
+/**
+ * The relation that means "not a relation": phrases filed under it label
+ * nothing. A fixed id, so devices that create it separately end up with one.
+ */
+export const NO_RELATION_ID = '00000000-0000-4000-8000-00000000a11a'
 
 export type EdgeType = 'child' | 'link'
 
@@ -84,8 +90,14 @@ export interface Crumb {
 
 export interface Backlink {
   source: NodeInfo
-  /** What the link means, guessed from its wording ("buy at", "waiting on"), or null. */
+  /** What the link means: your relation's name, or a suggestion ("buy at", "waiting on"), or null. */
   phrase: string | null
+  /** The relation it belongs to, if you've kept one for it (NO_RELATION_ID when ruled out). */
+  relationId: string | null
+  /** The suggestion it came from (the server's label or the device's guess), before your vocabulary. */
+  suggested: string | null
+  /** You chose the relation for this one link. */
+  pinned: boolean
   /** Ancestors of the source, root (pad) first, not including the source. */
   crumbs: Crumb[]
 }
@@ -98,6 +110,8 @@ export interface NodeViewData {
   refs: Record<string, RefInfo>
   outgoing: RefInfo[]
   backlinks: Backlink[]
+  /** For a relation: every link labelled with it. */
+  relationLinks: RelationLink[]
 }
 
 export interface PadSummary {
@@ -164,8 +178,33 @@ export interface GraphEdge {
   type: EdgeType
   /** For child edges under a numbered parent: the child's position (0-based). */
   index?: number
-  /** For links: what the link means, from its wording. */
+  /** For links: what the link means (your relation, or a suggestion). */
   phrase?: string | null
+}
+
+/** A relation you've kept, with the other ways you write it. */
+export interface RelationEntry {
+  id: string
+  name: string
+  aliases: { id: string; text: string }[]
+  /** Live links labelled with it. */
+  count: number
+}
+
+export interface RelationsData {
+  relations: RelationEntry[]
+  /** Labels in use that aren't one of your relations yet, most used first. */
+  suggestions: { phrase: string; count: number }[]
+  /** Phrases you said aren't relations. */
+  ignored: { id: string; text: string }[]
+}
+
+/** One link of a given relation: the line, and what it links to. */
+export interface RelationLink {
+  source: NodeInfo
+  crumbs: Crumb[]
+  target: RefInfo
+  pinned: boolean
 }
 
 export interface Neighborhood {

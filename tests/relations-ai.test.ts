@@ -2,7 +2,14 @@
 import { describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { SyncServer } from '../server/sync-server.mjs'
-import { RelationLabeler, cleanRelation, textHash as serverHash, type Classifier, type LabelItem } from '../server/relations-ai.mjs'
+import {
+  RelationLabeler,
+  cleanRelation,
+  textHash as serverHash,
+  type Classifier,
+  type LabelItem,
+  type Vocabulary,
+} from '../server/relations-ai.mjs'
 import { textHash } from '../src/lib/textHash'
 import { syncOnce, type Transport } from '../src/db/sync'
 import { makeToken } from '../src/lib/tokens'
@@ -10,7 +17,7 @@ import { makeStore } from './helpers'
 
 function setup(answer: (item: LabelItem) => string | null, opts: { maxCallsPerDay?: number; batch?: number } = {}) {
   const server = new SyncServer(new DatabaseSync(':memory:'))
-  const calls: { items: LabelItem[]; vocabulary: string[] }[] = []
+  const calls: { items: LabelItem[]; vocabulary: Vocabulary }[] = []
   const classify: Classifier = async (items, vocabulary) => {
     calls.push({ items, vocabulary })
     return { labels: items.map((i) => ({ id: i.id, relation: answer(i) })), usage: { input_tokens: 100, output_tokens: 10 } }
@@ -62,7 +69,23 @@ describe('server link labels', () => {
     expect(s.getBacklinks(shop)[0].phrase).toBe('buy at')
     expect(s.getBacklinks(sam)).toHaveLength(0)
     // The next call is told which relations are already in use.
-    expect(calls.at(-1)!.vocabulary).toContain('buy at')
+    expect(calls.at(-1)!.vocabulary.relations).toContain('buy at')
+  })
+
+  it('tells the model about the relations you kept, merged and ruled out', async () => {
+    const { labeler, link } = setup(() => null)
+    const s = await makeStore()
+    const pad = s.createPad('P')
+    const shop = s.createNode('place', 'Shop')
+    s.createChild(pad, undefined, { text: `Pick up tape at ${makeToken(shop)}` })
+    s.keepRelation('pick up at', 'buy at')
+    s.keepRelation('waiting on')
+    s.ignorePhrase('with')
+    await syncOnce(s, link)
+    const v = labeler.vocabulary()
+    expect(v.relations.slice(0, 2).sort()).toEqual(['buy at', 'waiting on'])
+    expect(v.sameAs).toEqual({ 'pick up at': 'buy at' })
+    expect(v.notRelations).toEqual(['with'])
   })
 
   it('skips deleted lines and stays within the daily limit', async () => {
