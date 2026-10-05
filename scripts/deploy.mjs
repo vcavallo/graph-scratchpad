@@ -20,7 +20,7 @@ import { homedir, tmpdir } from 'node:os'
 
 const SERVICE = 'graph-scratchpad'
 const GZIP = new Set(['.js', '.css', '.html', '.wasm', '.svg', '.json', '.webmanifest'])
-const SERVER_FILES = ['serve.mjs', 'sync-server.mjs']
+const SERVER_FILES = ['serve.mjs', 'sync-server.mjs', 'relations-ai.mjs']
 const repo = new URL('..', import.meta.url).pathname
 const dist = join(repo, 'dist')
 const toPi = process.argv.includes('--pi')

@@ -4,6 +4,7 @@ import { LATEST_SCHEMA_VERSION, migrate, schemaVersion } from './migrations'
 import { labelize, makeToken, parseTokens } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
 import { PHRASES_VERSION, linkContexts } from '../lib/relations'
+import { textHash } from '../lib/textHash'
 import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
@@ -113,6 +114,8 @@ const SYNC_COLUMNS: Record<string, (v: unknown) => string | number | null> = {
   task: (v) => (v ? 1 : 0),
   purged: (v) => (v ? 1 : 0),
   created_at: (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0),
+  // Server-written link labels (see migration 7); kept as JSON text.
+  rels: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : null),
 }
 const SYNC_FIELDS = new Set([...Object.keys(SYNC_COLUMNS), 'pos'])
 
@@ -293,7 +296,13 @@ export class Store {
   #reconcileLinks(id: string, text: string): void {
     const wanted = new Set(parseTokens(text).filter((t) => t !== id))
     const contexts = wanted.size ? linkContexts(text) : new Map()
-    const phraseOf = (dst: string) => contexts.get(dst)?.phrase ?? null
+    // The server's label wins while it was read from this exact text; otherwise our own guess.
+    const rels = wanted.size ? this.#rels(id) : {}
+    const hash = wanted.size ? textHash(text) : ''
+    const phraseOf = (dst: string) => {
+      const label = rels[dst]
+      return label && label.h === hash ? label.r : (contexts.get(dst)?.phrase ?? null)
+    }
     const existing = this.db.all<{ id: string; dst: string; phrase: string | null }>(
       `SELECT id, dst, phrase FROM edges WHERE src = ? AND type = 'link'`,
       [id],
@@ -1246,12 +1255,25 @@ export class Store {
   // migration 5 record local changes in sync_clock; the sync client (sync.ts)
   // sends them with syncCollect/syncAck and merges the server's with syncApply.
 
+  /** Labels the server's model gave this node's links (see migration 7). */
+  #rels(id: string): Record<string, { r: string | null; h: string }> {
+    const raw = this.db.get<{ rels: string | null }>('SELECT rels FROM nodes WHERE id = ?', [id])?.rels
+    if (!raw) return {}
+    try {
+      const v = JSON.parse(raw)
+      return v && typeof v === 'object' ? v : {}
+    } catch {
+      return {}
+    }
+  }
+
   /** The current value of every syncing field of a node. */
   #fieldValues(id: string): Record<string, unknown> | null {
     const r = this.#raw(id)
     if (!r) return null
     const pe = this.#parentEdge(id)
     return {
+      rels: this.#rels(id),
       kind: r.kind,
       text: r.text,
       done: r.done,
@@ -1413,7 +1435,7 @@ export class Store {
         if (c.f === 'pos') continue
         ensure(c.n)
         this.db.exec(`UPDATE nodes SET ${c.f} = ? WHERE id = ?`, [SYNC_COLUMNS[c.f](c.v), c.n])
-        if (c.f === 'text') textChanged.add(c.n)
+        if (c.f === 'text' || c.f === 'rels') textChanged.add(c.n)
         if (c.f === 'kind' || c.f === 'task' || c.f === 'done') flagsChanged.add(c.n)
       }
       // Positions last, once every node in the batch exists.

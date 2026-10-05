@@ -32,6 +32,8 @@ export interface SyncStatus {
   cursor: number
   /** Sync switched itself on in this session because the site offers it. */
   autoEnabled: boolean
+  /** The model the server labels links with, if any. */
+  labels: string
 }
 
 export type WorkerMessage =

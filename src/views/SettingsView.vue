@@ -38,6 +38,13 @@ const syncLine = computed(() => {
   }
 })
 
+const labelsBy = computed(() => {
+  const m = syncState.labels
+  if (!m) return 'Guessed on this device from the words around each link'
+  const name = /haiku/i.test(m) ? 'Claude Haiku' : /sonnet/i.test(m) ? 'Claude Sonnet' : m
+  return `Read by ${name} on ${syncState.server || 'the server'}; this device’s own guess until then`
+})
+
 const lastSynced = computed(() => {
   const at = syncState.lastSync
   if (!at) return 'Not yet'
@@ -228,6 +235,10 @@ async function askPersist() {
         <dl class="facts">
           <div><dt>Server</dt><dd>{{ syncState.server || 'Not reachable yet' }}</dd></div>
           <div v-if="syncState.enabled"><dt>Last synced</dt><dd>{{ lastSynced }}</dd></div>
+          <div v-if="syncState.enabled">
+            <dt>Link labels</dt>
+            <dd>{{ labelsBy }}</dd>
+          </div>
         </dl>
         <div class="btn-row">
           <button

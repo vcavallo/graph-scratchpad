@@ -80,6 +80,29 @@ export class SyncServer {
     since = Number.isSafeInteger(since) && since > 0 ? since : 0
     limit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), MAX_BATCH) : 2000
 
+    this.write(changes, device)
+    const rows = this.#db
+      .prepare('SELECT node, field, value, hlc, seq, device FROM fields WHERE seq > ? ORDER BY seq LIMIT ?')
+      .all(since, limit)
+    const out = []
+    for (const r of rows) {
+      if (r.device === device) continue // its own change: it has it
+      out.push({ n: r.node, f: r.field, v: JSON.parse(r.value), h: r.hlc })
+    }
+    const seq = this.seq
+    return {
+      epoch: this.epoch,
+      cursor: rows.length ? rows[rows.length - 1].seq : Math.min(since, seq),
+      changes: out,
+      more: rows.length === limit,
+      accepted: this.#lastAccepted,
+    }
+  }
+
+  #lastAccepted = 0
+
+  /** Store changes that are newer than what we have (the server's own, too). Returns how many were. */
+  write(changes, device) {
     const db = this.#db
     let accepted = 0
     let seq = this.seq
@@ -106,23 +129,28 @@ export class SyncServer {
       db.exec('ROLLBACK')
       throw e
     }
+    this.#lastAccepted = accepted
+    if (accepted) for (const fn of this.#listeners) fn(seq, device)
+    return accepted
+  }
 
-    const rows = db
-      .prepare('SELECT node, field, value, hlc, seq, device FROM fields WHERE seq > ? ORDER BY seq LIMIT ?')
-      .all(since, limit)
-    const out = []
-    for (const r of rows) {
-      if (r.device === device) continue // its own change: it has it
-      out.push({ n: r.node, f: r.field, v: JSON.parse(r.value), h: r.hlc })
-    }
-    if (accepted) for (const fn of this.#listeners) fn(seq)
-    return {
-      epoch: this.epoch,
-      cursor: rows.length ? rows[rows.length - 1].seq : Math.min(since, seq),
-      changes: out,
-      more: rows.length === limit,
-      accepted,
-    }
+  /** The current value of one field, or undefined. */
+  field(node, field) {
+    const r = this.#db.prepare('SELECT value FROM fields WHERE node = ? AND field = ?').get(node, field)
+    return r ? JSON.parse(r.value) : undefined
+  }
+
+  /** [node, value] for every node that has this field. */
+  allOf(field) {
+    return this.#db
+      .prepare('SELECT node, value FROM fields WHERE field = ?')
+      .all(field)
+      .map((r) => [r.node, JSON.parse(r.value)])
+  }
+
+  /** The newest clock recorded for a field across all nodes. */
+  maxHlc(field) {
+    return this.#db.prepare('SELECT max(hlc) AS h FROM fields WHERE field = ?').get(field)?.h ?? null
   }
 
   /** Write a consistent copy of the database to `path`. */

@@ -41,6 +41,16 @@ in
       description = "Publish on the tailnet at https://<host>.<tailnet>.ts.net:<port> (null: don't).";
     };
 
+    anthropicKeyFile = lib.mkOption {
+      type = lib.types.str;
+      default = "${cfg.dataDir}/anthropic-api-key";
+      description = ''
+        File holding an Anthropic API key (mode 600, owned by the service user). If it
+        exists, the server labels links with Claude Haiku; otherwise devices keep their
+        own guesses. Kept out of the Nix store on purpose.
+      '';
+    };
+
     nodejs = lib.mkPackageOption pkgs "nodejs_22" { };
   };
 
@@ -62,6 +72,7 @@ in
         PORT = toString cfg.port;
         SYNC_DB = "${root}/sync/sync.sqlite3";
         SYNC_NAME = config.networking.hostName;
+        RELATIONS_KEY_FILE = cfg.anthropicKeyFile;
         NODE_NO_WARNINGS = "1"; # node:sqlite is still marked experimental
       };
       serviceConfig = {

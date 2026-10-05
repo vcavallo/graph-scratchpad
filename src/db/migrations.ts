@@ -141,6 +141,13 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
     version: 6,
     sql: `ALTER TABLE edges ADD COLUMN phrase TEXT;`,
   },
+  {
+    // Link labels from the server's model (server/relations-ai.mjs): JSON
+    // { [linkedId]: { r: relation or null, h: hash of the text it read } }.
+    // Written only by the server and received through sync, so no trigger.
+    version: 7,
+    sql: `ALTER TABLE nodes ADD COLUMN rels TEXT;`,
+  },
 ]
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version

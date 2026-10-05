@@ -22,6 +22,7 @@ export class SyncRunner {
     pending: 0,
     cursor: 0,
     autoEnabled: false,
+    labels: '',
   }
   #running: Promise<void> | null = null
   #again = false
@@ -53,6 +54,7 @@ export class SyncRunner {
         if (body?.ok) {
           this.status.available = true
           this.status.server = String(body.name ?? '')
+          this.status.labels = String(body.relations?.model ?? '')
           this.#serverHasData = Number(body.nodes) > 0
           if (info.enabled === null) {
             // Progressive enhancement: a site with a sync server syncs, unless turned off here.

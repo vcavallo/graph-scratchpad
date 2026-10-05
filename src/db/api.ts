@@ -58,6 +58,7 @@ export const syncState = reactive<SyncStatus>({
   pending: 0,
   cursor: 0,
   autoEnabled: false,
+  labels: '',
 })
 
 // Sync calls don't count as writes: a sync that merges something reports it with a 'changed' message.

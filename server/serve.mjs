@@ -7,6 +7,9 @@
 //   SYNC_DB=/path/sync.sqlite3     keep the sync database here (Node's built-in SQLite)
 //   SYNC_UPSTREAM=https://host     or pass /api/sync through to another server
 // Daily backups of the sync database go to <dir of SYNC_DB>/backups (7 kept).
+// Link labels by Claude Haiku (server/relations-ai.mjs), if an API key is present:
+//   RELATIONS_KEY_FILE=/path/key   default: <dir of SYNC_DB>/../anthropic-api-key
+//   RELATIONS_MODEL, RELATIONS_MAX_CALLS_PER_DAY (default 300)
 // Meant to sit behind `tailscale serve`: it listens on localhost only, and the
 // tailnet is the access control.
 
@@ -24,12 +27,29 @@ const SYNC_UPSTREAM = process.env.SYNC_UPSTREAM?.replace(/\/$/, '')
 const MAX_BODY = 25 * 1024 * 1024
 
 let sync = null
+let labeler = null
 if (SYNC_DB) {
   const { DatabaseSync } = await import('node:sqlite')
   const { SyncServer } = await import('./sync-server.mjs')
   await fs.mkdir(dirname(SYNC_DB), { recursive: true })
   sync = new SyncServer(new DatabaseSync(SYNC_DB))
   scheduleBackups(join(dirname(SYNC_DB), 'backups'))
+  labeler = await startLabeler(process.env.RELATIONS_KEY_FILE ?? join(dirname(SYNC_DB), '..', 'anthropic-api-key'))
+}
+
+async function startLabeler(keyFile) {
+  const apiKey = (await fs.readFile(keyFile, 'utf8').catch(() => '')).trim()
+  if (!apiKey) {
+    console.log(`Link labels: no API key at ${keyFile}; devices use their own guesses`)
+    return null
+  }
+  const { RelationLabeler, claudeClassifier } = await import('./relations-ai.mjs')
+  const model = process.env.RELATIONS_MODEL ?? 'claude-haiku-4-5-20251001'
+  console.log(`Link labels: ${model}`)
+  return new RelationLabeler(sync, claudeClassifier({ apiKey, model }), {
+    model,
+    maxCallsPerDay: Number(process.env.RELATIONS_MAX_CALLS_PER_DAY ?? 300),
+  }).start()
 }
 
 async function scheduleBackups(dir) {
@@ -76,7 +96,12 @@ async function handleSync(req, res, path) {
   if (SYNC_UPSTREAM) return proxy(req, res)
   if (!sync) return json(res, 404, { ok: false, error: 'Sync is not set up on this server' })
   if (path === '/api/sync' && req.method === 'GET') {
-    return json(res, 200, { ok: true, name: process.env.SYNC_NAME ?? hostname(), ...sync.info() })
+    return json(res, 200, {
+      ok: true,
+      name: process.env.SYNC_NAME ?? hostname(),
+      ...sync.info(),
+      relations: labeler ? labeler.stats() : null,
+    })
   }
   if (path === '/api/sync' && req.method === 'POST') {
     let body
