@@ -25,6 +25,7 @@ export class SyncRunner {
     autoEnabled: false,
     labels: '',
     events: '',
+    notice: null,
   }
   #running: Promise<void> | null = null
   #again = false
@@ -42,7 +43,7 @@ export class SyncRunner {
 
   #set(patch: Partial<SyncStatus>, changed = false): void {
     const info = this.store.syncInfo()
-    Object.assign(this.status, { pending: info.pending, cursor: info.cursor }, patch)
+    Object.assign(this.status, { pending: info.pending, cursor: info.cursor, notice: this.#conn?.notice?.() ?? null }, patch)
     this.report({ ...this.status }, changed)
   }
 

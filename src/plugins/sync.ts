@@ -7,6 +7,9 @@
 // it up. It runs in the database worker.
 
 import type { SyncRequest, SyncResponse, Transport } from '@/db/sync'
+import type { SyncNotice } from '@/db/protocol'
+
+export type { SyncNotice }
 
 export interface SyncServerInfo {
   /** Shown in Settings. */
@@ -24,6 +27,8 @@ export interface SyncConnection {
   send: Transport
   /** Where the server announces changes (server-sent events), if it does. */
   events?: string
+  /** A banner for the whole app (asked after each sync), or null. */
+  notice?: () => SyncNotice | null
 }
 
 export interface SyncPlugin {
