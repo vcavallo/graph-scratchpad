@@ -2071,9 +2071,14 @@ export class Store {
       this.db.exec('DELETE FROM nodes')
       this.db.exec('DELETE FROM sync_clock')
       this.db.exec(
-        `DELETE FROM meta WHERE key IN ('inbox_id', 'sync_enabled', 'sync_epoch', 'sync_cursor', 'sync_schema')`,
+        // A new device id too: servers don't send a device what it wrote itself, and this one no longer has it.
+        `DELETE FROM meta WHERE key IN ('inbox_id', 'sync_enabled', 'sync_epoch', 'sync_cursor', 'sync_schema', 'device_id')`,
       )
       this.db.exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1')`)
+      // A new clock for the new id, never earlier than the old one.
+      const last = this.#hlc.tick()
+      this.#hlc = new Hlc(this.#deviceId(), this.#now)
+      this.#hlc.observe(last)
       this.#ensureBuiltInCategories()
     })
   }
