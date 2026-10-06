@@ -30,6 +30,8 @@ export interface SyncStatus {
   pending: number
   /** Server sequence number we've pulled up to (compared with change notifications). */
   cursor: number
+  /** Where the server announces changes (server-sent events); empty when it doesn't. */
+  events: string
   /** Sync switched itself on in this session because the site offers it. */
   autoEnabled: boolean
   /** The model the server labels links with, if any. */
