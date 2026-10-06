@@ -74,7 +74,8 @@ export class SyncRunner {
       // No connection (nothing set up): no sync, whatever this device had before.
       this.status.enabled =
         this.#conn !== null && this.store.syncInfo().enabled === true && (this.status.available || info.enabled === true)
-      this.#set({ state: this.status.enabled ? 'idle' : 'off' }, wiped)
+      // Enabled: the first sync starts right away, so say so (not "idle", which reads as up to date).
+      this.#set({ state: this.status.enabled ? 'syncing' : 'off' }, wiped)
       if (this.status.enabled) await this.run()
     })()
     return this.#started
@@ -100,7 +101,9 @@ export class SyncRunner {
     await this.#running?.catch(() => {})
     this.#started = null
     this.#conn = null
-    Object.assign(this.status, { available: false, checked: false, server: '', labels: '', error: '', events: '' })
+    // Another server (or account) from here on: nothing about the old one carries over.
+    Object.assign(this.status, { available: false, checked: false, server: '', labels: '', error: '', events: '', lastSync: null })
+    this.#set({ state: 'off' })
     await this.start()
     return { ...this.status }
   }
