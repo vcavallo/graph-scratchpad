@@ -206,27 +206,81 @@ export function caretOnEdgeLine(el: HTMLElement, edge: 'first' | 'last'): boolea
 
 export interface PastedLine {
   text: string
-  /** Set when the line had a checkbox ("[ ]" or "[x]"); otherwise it follows the line it's pasted after. */
+  /**
+   * true: a to-do ("[ ]", "[x]"); false: a note ("- ", "* ", "1. ", a heading);
+   * unset: no marker, so it follows the line before it (or the line it's under).
+   */
   task?: boolean
   done?: boolean
-  /** It was numbered ("1. …"): the list it lands in becomes a numbered list. */
+  /** It was numbered ("1. …"): the list it's in is a numbered list. */
   numbered?: boolean
+  /** Lines indented under it, or under its heading. */
+  children: PastedLine[]
 }
 
-/** Clean up pasted text into lines, dropping list markers like "- ", "* ", "1. ", "[ ] " (but keeping checkboxes and numbering). */
+/** A paste into a line: its first line goes into that line, `inside` under it, `after` after it. */
+export interface PastedRest {
+  inside: PastedLine[]
+  after: PastedLine[]
+}
+
+const PASTE_MARKER = /^\s*(?:([-*•+])(?:\s+|$)|(\d{1,3})[.)](?:\s+|$))?(?:\[([ xX]?)\](?:\s+|$))?/
+const PASTE_HEADING = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?$/
+const PASTE_RULE = /^\s*([-*_])(?:\s*\1){2,}$/
+
+/** Indent width, with a tab reaching the next multiple of 4. */
+function indentOf(line: string): number {
+  let col = 0
+  for (const ch of line) {
+    if (ch === ' ') col++
+    else if (ch === '\t') col += 4 - (col % 4)
+    else break
+  }
+  return col
+}
+
+/**
+ * Read pasted text (a markdown draft, say) as an outline. Indentation nests a
+ * line under the one above it, one level at a time, whatever the indent width;
+ * a heading takes everything up to the next heading of its level. Markers are
+ * dropped but kept as meaning: "[ ]"/"[x]" make to-dos, "- ", "* ", "1. " and
+ * headings make notes, and "1. " numbers its list. Blank lines and rules go.
+ */
 export function pasteLines(text: string): PastedLine[] {
-  return text
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((l) => {
-      const m = /^\s*(?:[-*•+]\s+|(\d{1,3})[.)]\s+)?(?:\[([ xX]?)\]\s+)?/.exec(l)!
-      const line: PastedLine = { text: l.slice(m[0].length).trimEnd() }
-      if (m[1] !== undefined) line.numbered = true
+  const roots: PastedLine[] = []
+  // Lines that can still take children: list lines by indent, headings by level (0 for list lines).
+  const open: { line: PastedLine; col: number; heading: number }[] = []
+  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const l = raw.trimEnd()
+    if (!l.trim() || PASTE_RULE.test(l)) continue
+    const col = indentOf(l)
+    const h = PASTE_HEADING.exec(l)
+    let line: PastedLine
+    let heading = 0
+    if (h && h[2]) {
+      heading = h[1].length
+      line = { text: h[2], task: false, children: [] }
+      // A heading closes everything back to a heading above its level.
+      while (open.length && !(open[open.length - 1].heading && open[open.length - 1].heading < heading)) open.pop()
+    } else {
+      const m = PASTE_MARKER.exec(l)!
+      line = { text: l.slice(m[0].length), children: [] }
+      if (!line.text) continue
+      if (m[1] !== undefined) line.task = false
       if (m[2] !== undefined) {
-        line.task = true
-        line.done = m[2].toLowerCase() === 'x'
+        line.task = false
+        line.numbered = true
       }
-      return line
-    })
-    .filter((l) => l.text.length > 0)
+      if (m[3] !== undefined) {
+        line.task = true
+        line.done = m[3].toLowerCase() === 'x'
+      }
+      // Close the lines indented as far as this one, or further; headings stay open.
+      while (open.length && !open[open.length - 1].heading && open[open.length - 1].col >= col) open.pop()
+    }
+    const parent = open[open.length - 1]?.line
+    ;(parent ? parent.children : roots).push(line)
+    open.push({ line, col, heading })
+  }
+  return roots
 }

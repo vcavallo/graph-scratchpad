@@ -4,7 +4,7 @@ import EditableText from './EditableText.vue'
 import Icon from './Icon.vue'
 import KindIcon from './KindIcon.vue'
 import type { FlatRow } from '@/lib/treeOps'
-import type { LineMarker, PastedLine, Shortcut } from '@/lib/editorDom'
+import type { LineMarker, PastedRest, Shortcut } from '@/lib/editorDom'
 
 const props = defineProps<{ row: FlatRow; active: boolean; save: (id: string, text: string) => Promise<unknown> }>()
 const emit = defineEmits<{
@@ -15,7 +15,7 @@ const emit = defineEmits<{
   shortcut: [row: FlatRow, name: Shortcut]
   atTrigger: [row: FlatRow, offset: number]
   chip: [id: string]
-  pasteLines: [row: FlatRow, lines: PastedLine[]]
+  pasteLines: [row: FlatRow, rest: PastedRest]
   marker: [row: FlatRow, m: LineMarker]
   toggle: [row: FlatRow]
   done: [row: FlatRow]

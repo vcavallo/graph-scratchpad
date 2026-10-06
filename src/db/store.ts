@@ -58,6 +58,13 @@ export interface NodeInit {
   done?: boolean
 }
 
+/** A new node with what goes inside it, e.g. a pasted outline. */
+export interface OutlineInit extends NodeInit {
+  /** Its children are a numbered list. */
+  numbered?: boolean
+  children?: OutlineInit[]
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Where to put a node among its siblings. */
@@ -491,12 +498,13 @@ export class Store {
   }
 
   /**
-   * Insert several new nodes in order, in one transaction: after an existing
-   * sibling, or as the first/last children of a parent. Returns their ids.
+   * Insert several new nodes in order, with what's inside them, in one
+   * transaction: after an existing sibling, or as the first/last children of a
+   * parent. Returns the ids of the top-level ones.
    */
   insertMany(
     anchor: { after: string } | { parent: string; position: 'first' | 'last' },
-    items: NodeInit[],
+    items: OutlineInit[],
   ): string[] {
     return this.db.tx(() => {
       const ids: string[] = []
@@ -507,6 +515,8 @@ export class Store {
         else if ('after' in anchor) id = this.createSibling(anchor.after, 'after', init)
         else id = this.createChild(anchor.parent, anchor.position === 'first' ? null : undefined, init)
         ids.push(id)
+        if (init.numbered) this.setNumbered(id, true)
+        if (init.children?.length) this.insertMany({ parent: id, position: 'last' }, init.children)
       }
       return ids
     })

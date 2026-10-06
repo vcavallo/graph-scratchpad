@@ -557,6 +557,22 @@ describe('malformed sort keys from imports', () => {
 })
 
 describe('insertMany', () => {
+  it('inserts nested items, with numbered lists', () => {
+    const pad = s.createPad('P')
+    const a = s.createChild(pad, undefined, { text: 'a' })
+    const [g, z] = s.insertMany({ after: a }, [
+      { text: 'Garage', task: false, numbered: true, children: [{ text: 'sort' }, { text: 'haul', task: true, children: [{ text: 'truck', task: true, done: true }] }] },
+      { text: 'z' },
+    ])
+    const t = s.getTree(pad)
+    expect(t.children.map((c) => c.text)).toEqual(['a', 'Garage', 'z'])
+    const garage = t.children[1]
+    expect(garage).toMatchObject({ id: g, numbered: true, task: false })
+    expect(garage.children.map((c) => c.text)).toEqual(['sort', 'haul'])
+    expect(garage.children[1].children[0]).toMatchObject({ text: 'truck', task: true, done: true })
+    expect(t.children[2].id).toBe(z)
+  })
+
   it('inserts several lines after a sibling, in order', () => {
     const { a } = build(pad, ['a', 'z'])
     const ids = s.insertMany({ after: a }, [{ text: 'b' }, { text: 'c' }, { text: 'd' }])
