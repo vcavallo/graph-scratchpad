@@ -10,8 +10,9 @@
 // Link labels by Claude Haiku (server/relations-ai.mjs), if an API key is present:
 //   RELATIONS_KEY_FILE=/path/key   default: <dir of SYNC_DB>/../anthropic-api-key
 //   RELATIONS_MODEL, RELATIONS_MAX_CALLS_PER_DAY (default 300)
-// Meant to sit behind `tailscale serve`: it listens on localhost only, and the
-// tailnet is the access control.
+// Meant to sit behind HTTPS somewhere private (`tailscale serve`, or a reverse
+// proxy with its own auth): it listens on localhost only and has no accounts,
+// so anyone who can reach it can read and write what it syncs.
 
 import { createServer } from 'node:http'
 import { createReadStream, promises as fs } from 'node:fs'

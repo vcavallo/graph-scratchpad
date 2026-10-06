@@ -2,3 +2,8 @@ node_modules/
 dist/
 e2e/shots/
 *.log
+.vercel
+# Your own deploy settings and notes, kept out of the repo.
+.env.deploy
+CLAUDE.local.md
+.env*

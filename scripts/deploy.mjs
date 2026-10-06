@@ -6,10 +6,13 @@
 // The server picks up new static files on the next request; it's restarted
 // only when its own code changed.
 //
-// Usage: node scripts/deploy.mjs        this machine (~/.local/share/graph-scratchpad, user service)
-//        node scripts/deploy.mjs --pi   the Pi over ssh (/var/lib/graph-scratchpad, system service
-//                                       from deploy/nixos/graph-scratchpad.nix)
-// Environment: DEPLOY_ROOT (local), DEPLOY_HOST and DEPLOY_REMOTE_ROOT (--pi).
+// Usage: node scripts/deploy.mjs            this machine (~/.local/share/graph-scratchpad,
+//                                           user service: deploy/graph-scratchpad.service)
+//        node scripts/deploy.mjs --remote   another machine over ssh (/var/lib/graph-scratchpad,
+//                                           system service: deploy/nixos/graph-scratchpad.nix)
+// Environment: DEPLOY_ROOT (local); DEPLOY_HOST (an ssh host, required) and
+// DEPLOY_REMOTE_ROOT (--remote). `npm run deploy:remote` reads them from
+// .env.deploy if it exists (it's gitignored).
 
 import { promises as fs, createReadStream, createWriteStream } from 'node:fs'
 import { createGzip } from 'node:zlib'
@@ -23,7 +26,12 @@ const GZIP = new Set(['.js', '.css', '.html', '.wasm', '.svg', '.json', '.webman
 const SERVER_FILES = ['serve.mjs', 'sync-server.mjs', 'relations-ai.mjs']
 const repo = new URL('..', import.meta.url).pathname
 const dist = join(repo, 'dist')
-const toPi = process.argv.includes('--pi')
+const toRemote = process.argv.includes('--remote')
+const remoteHost = process.env.DEPLOY_HOST
+if (toRemote && !remoteHost) {
+  console.error('Set DEPLOY_HOST to the ssh host to deploy to (for example in .env.deploy: DEPLOY_HOST=myserver).')
+  process.exit(1)
+}
 
 async function walk(dir) {
   const out = []
@@ -53,8 +61,8 @@ for (const f of SERVER_FILES) await fs.copyFile(join(repo, 'server', f), join(st
 
 // ---------------------------------------------------------------- publish
 
-if (toPi) {
-  const host = process.env.DEPLOY_HOST ?? 'utility-server-pi'
+if (toRemote) {
+  const host = remoteHost
   const root = process.env.DEPLOY_REMOTE_ROOT ?? '/var/lib/graph-scratchpad'
   run('rsync', ['-a', '--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r', `${stage}/`, `${host}:${root}/releases/${name}/`], {
     stdio: 'inherit',

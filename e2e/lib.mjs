@@ -9,7 +9,14 @@ export const SHOTS = new URL('./shots/', import.meta.url).pathname
 mkdirSync(SHOTS, { recursive: true })
 
 function chromiumPath() {
-  for (const p of [process.env.CHROMIUM, '/run/current-system/sw/bin/chromium', '/usr/bin/chromium']) {
+  for (const p of [
+    process.env.CHROMIUM,
+    '/run/current-system/sw/bin/chromium',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ]) {
     if (p && existsSync(p)) return p
   }
   throw new Error('No Chromium found; set CHROMIUM=/path/to/chromium')

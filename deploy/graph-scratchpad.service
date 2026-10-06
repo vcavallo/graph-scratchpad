@@ -1,17 +1,23 @@
-# systemd user unit for this machine (the Framework): serves the deployed build
-# on 127.0.0.1:8742 and passes /api/sync through to the Pi's sync server.
+# Example systemd user unit: serves the release that `npm run deploy` puts in
+# ~/.local/share/graph-scratchpad/current, with the sync server, on 127.0.0.1:8742.
 # Install: cp deploy/graph-scratchpad.service ~/.config/systemd/user/ &&
 #          systemctl --user daemon-reload && systemctl --user enable --now graph-scratchpad
-# Tailnet HTTPS: tailscale serve --bg --https=10002 http://127.0.0.1:8742
-# (The Pi runs the same server from a NixOS module: deploy/nixos/graph-scratchpad.nix.)
+# It listens on localhost only and has no accounts: put HTTPS in front of it (the
+# service worker and on-device storage need it) somewhere private, for example
+# `tailscale serve --bg --https=443 http://127.0.0.1:8742`.
+# (A NixOS server can use deploy/nixos/graph-scratchpad.nix instead.)
 [Unit]
-Description=Graph Scratchpad static server
+Description=Graph Paper (app and sync server)
 After=network.target
 
 [Service]
-ExecStart=/etc/profiles/per-user/vcavallo/bin/node %h/.local/share/graph-scratchpad/current/server/serve.mjs %h/.local/share/graph-scratchpad/current/app 8742
+# If node isn't on systemd's PATH (nvm, Nix profiles), give its full path (`which node`).
+ExecStart=/usr/bin/env node %h/.local/share/graph-scratchpad/current/server/serve.mjs %h/.local/share/graph-scratchpad/current/app 8742
 Environment=NODE_NO_WARNINGS=1
-Environment=SYNC_UPSTREAM=https://utility-server-pi.pirate-emperor.ts.net
+# Keep the sync database here (leave both lines out for an app without sync)...
+Environment=SYNC_DB=%h/.local/share/graph-scratchpad/sync/sync.sqlite3
+# ...or pass /api/sync through to a sync server on another machine instead.
+# Environment=SYNC_UPSTREAM=https://sync.example.com
 Restart=always
 RestartSec=2
 
