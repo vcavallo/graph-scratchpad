@@ -260,7 +260,8 @@ async function askPersist() {
           Vim keys are on, on this device. <kbd>Esc</kbd> for normal mode: <kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd> move,
           <kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd> jump words, <kbd>0</kbd> <kbd>$</kbd> <kbd>gg</kbd> <kbd>G</kbd> go to the ends, <kbd>x</kbd> <kbd>dd</kbd> <kbd>dw</kbd> <kbd>D</kbd> delete,
           <kbd>cw</kbd> <kbd>cc</kbd> <kbd>C</kbd> <kbd>r</kbd> change, <kbd>o</kbd> <kbd>O</kbd> open a line, <kbd>&gt;&gt;</kbd> <kbd>&lt;&lt;</kbd> indent, <kbd>za</kbd> folds,
-          <kbd>yy</kbd> <kbd>p</kbd> copy and put, <kbd>u</kbd> undoes, <kbd>gx</kbd> opens a link.
+          <kbd>yy</kbd> <kbd>p</kbd> copy and put, <kbd>u</kbd> undoes, <kbd>gx</kbd> opens a link,
+          <kbd>Ctrl-O</kbd> <kbd>Ctrl-I</kbd> go back and forward.
           <kbd>i</kbd> <kbd>a</kbd> <kbd>I</kbd> <kbd>A</kbd> to type again. The mode shows in the bar at the bottom.
         </template>
         <template v-else>For a computer keyboard: edit with Vim’s normal and insert modes. Only on this device.</template>

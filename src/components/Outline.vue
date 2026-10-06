@@ -24,6 +24,7 @@ import { sendActions } from '@/lib/sendTo'
 import { noteToFact } from '@/lib/factActions'
 import { placeOn, type VimPlace, type VimRowAction } from '@/lib/vim'
 import { vim, vimInsert, type YankedLine } from '@/state/vim'
+import { vimOpen } from '@/lib/vimJumps'
 import { parseTokens } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
@@ -286,7 +287,7 @@ function onVim(row: T.FlatRow, a: VimRowAction) {
     case 'undo':
       return vimUndo()
     case 'open':
-      return void router.push(`/n/${a.link ?? row.node.ref ?? row.node.id}`)
+      return vimOpen(`/n/${a.link ?? row.node.ref ?? row.node.id}`)
     case 'indent':
     case 'outdent': {
       const was = { kind: 'place' as const, id: row.node.id, ...placeOf(row.node.id) }
