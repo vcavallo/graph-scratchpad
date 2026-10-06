@@ -3,6 +3,10 @@ import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath, URL } from 'node:url'
 
+// The app's name (the installed app, the page title, and where the app names
+// itself). A build of it under another name sets VITE_APP_NAME before this runs.
+const APP_NAME = (process.env.VITE_APP_NAME ??= 'Graph Paper')
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -11,8 +15,8 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Graph Paper',
-        short_name: 'Graph Paper',
+        name: APP_NAME,
+        short_name: APP_NAME,
         description: 'Nested lists that link to each other. Works offline; syncs with your own server when it can.',
         theme_color: '#f4f7f8',
         background_color: '#f4f7f8',
