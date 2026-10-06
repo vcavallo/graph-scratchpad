@@ -921,7 +921,7 @@ export class Store {
       add(more, 'Install it from your browser’s menu (Install app, or Add to Home screen) to use it offline, like any app')
       add(more, 'On a computer? Settings → Keyboard turns on Vim keys.')
       this.setCollapsed(more, true)
-      add(pad, 'Your lists are saved on this device. Settings → Export saves a backup.')
+      add(pad, 'Your lists are saved on this device. Settings → Sync & data → Export saves a backup.')
       add(store, 'Closes at 6 on Sundays')
       // The welcome pad is older than any real edit, and isn't sent by sync on its own (see syncPrepareJoin).
       this.db.exec(`UPDATE sync_clock SET hlc = '${ZERO_HLC}', local = 0`)
