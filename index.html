@@ -3,8 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#f4f7f8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f2b47" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f7f8" />
+    <script>
+      // Light or dark before the first paint: Settings → Appearance on this device, else the system's.
+      // (lib/theme.ts keeps it up to date afterwards.)
+      ;(function () {
+        var choice = null
+        try {
+          choice = localStorage.getItem('gs.theme')
+        } catch (e) {}
+        var dark = choice === 'dark' || (choice !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#0f2b47' : '#f4f7f8'
+      })()
+    </script>
     <meta name="description" content="Nested lists that link to each other. Works offline." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

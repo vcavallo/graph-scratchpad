@@ -9,8 +9,10 @@ import { trackKeyboard } from './lib/viewport'
 import { startSyncTriggers } from './state/sync'
 import { trackInstall } from './lib/install'
 import { startCategories } from './state/categories'
+import { trackTheme } from './lib/theme'
 import { startVimJumps } from './lib/vimJumps'
 
+trackTheme()
 startDb()
 startSyncTriggers()
 trackInstall()

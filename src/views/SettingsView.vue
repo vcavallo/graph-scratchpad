@@ -12,6 +12,13 @@ import { installState, promptInstall } from '@/lib/install'
 import { MAX_PINNED, categories } from '@/state/categories'
 import { newCategory, togglePinned } from '@/lib/contextActions'
 import { setVimEnabled, vim } from '@/state/vim'
+import { setTheme, theme, type ThemeChoice } from '@/lib/theme'
+
+const THEMES: { value: ThemeChoice; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
 
 const router = useRouter()
 const { data: info } = useLoader<DbInfo>(() => api.dbInfo())
@@ -251,6 +258,24 @@ async function askPersist() {
           <button type="button" class="btn btn-primary" @click="install"><Icon name="download" :size="18" /> Install app</button>
         </div>
       </template>
+    </section>
+
+    <section class="card appearance-card">
+      <h2 class="section-title">Appearance</h2>
+      <div class="segmented" role="radiogroup" aria-label="Theme">
+        <button
+          v-for="t in THEMES"
+          :key="t.value"
+          type="button"
+          role="radio"
+          :aria-checked="theme.choice === t.value"
+          :class="{ on: theme.choice === t.value }"
+          @click="setTheme(t.value)"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+      <p class="note">System follows your device’s light or dark setting. The choice is kept on this device.</p>
     </section>
 
     <section class="card vim-card">
