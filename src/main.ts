@@ -9,11 +9,13 @@ import { trackKeyboard } from './lib/viewport'
 import { startSyncTriggers } from './state/sync'
 import { trackInstall } from './lib/install'
 import { startCategories } from './state/categories'
+import { startVimJumps } from './lib/vimJumps'
 
 startDb()
 startSyncTriggers()
 trackInstall()
 startCategories()
+startVimJumps()
 trackKeyboard()
 void persistOnFirstRun()
 
