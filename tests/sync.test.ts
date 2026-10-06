@@ -325,6 +325,19 @@ describe('sync', () => {
     expect(seen.some((c) => c.n === PEOPLE_ID)).toBe(false)
   })
 
+  it('gets back what it wrote itself after a reset, from the same server', async () => {
+    const server = makeServer()
+    const d = await device(server)
+    d.s.createChild(d.s.createPad('Mine'), undefined, { text: 'my line' })
+    await d.sync()
+    const before = d.s.syncInfo().deviceId
+    d.s.resetDevice()
+    expect(d.s.syncInfo().deviceId).not.toBe(before)
+    d.s.syncSetEnabled(true)
+    await d.sync()
+    expect(d.s.listPads().map((p) => p.label)).toEqual(['Mine'])
+  })
+
   it('fills a new or reset server from the devices', async () => {
     const server = makeServer()
     const a = await device(server)
