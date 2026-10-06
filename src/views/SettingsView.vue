@@ -14,6 +14,7 @@ import { newCategory, togglePinned } from '@/lib/contextActions'
 import { setVimEnabled, vim } from '@/state/vim'
 import SyncSettings from '@/plugins/SyncSettings.vue'
 import { setTheme, theme, type ThemeChoice } from '@/lib/theme'
+import { APP_NAME } from '@/lib/appName'
 
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -102,7 +103,7 @@ async function share() {
   busy.value = true
   try {
     const file = await backupFile()
-    await navigator.share({ files: [file], title: 'Graph Paper backup' })
+    await navigator.share({ files: [file], title: `${APP_NAME} backup` })
     recordBackup()
   } catch (e) {
     if ((e as Error).name !== 'AbortError') reportError(e)
@@ -120,7 +121,7 @@ async function onImportFile(e: Event) {
   try {
     data = JSON.parse(await file.text())
   } catch {
-    toast('That file isn’t valid JSON. Choose a backup exported from Graph Paper.', { tone: 'error', ms: 6000 })
+    toast(`That file isn’t valid JSON. Choose a backup exported from ${APP_NAME}.`, { tone: 'error', ms: 6000 })
     return
   }
   const count = Array.isArray((data as { nodes?: unknown[] })?.nodes) ? (data as { nodes: unknown[] }).nodes.length : 0
