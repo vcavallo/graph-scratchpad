@@ -13,6 +13,9 @@ export type VimRowAction =
   | { action: 'down' | 'up'; place: VimPlace }
   | { action: 'first' | 'last' }
   | { action: 'open-below' | 'open-above' | 'delete' | 'indent' | 'outdent' | 'fold' | 'unfold' | 'fold-toggle' }
+  | { action: 'yank' | 'put-below' | 'put-above' | 'undo' }
+  /** gx: open the link under the cursor, or (with no link) the line itself. */
+  | { action: 'open'; link?: string }
 
 export interface VimResult {
   /** Keys typed so far of a two-key command ("d" of "dd"). */
@@ -91,6 +94,12 @@ function wordEnd(text: string, cs: number[], i: number): number {
   return j
 }
 
+/** The id of the link at cell i, if it is one. */
+function linkAt(text: string, cs: number[], i: number): string | undefined {
+  if (kindOf(text, cs, i) !== 'link') return undefined
+  return tokenRe().exec(text.slice(cs[i], cs[i + 1] ?? text.length))?.[1].toLowerCase()
+}
+
 function firstNonBlank(text: string, cs: number[]): number {
   let j = 0
   while (j < cs.length - 1 && kindOf(text, cs, j) === 'blank') j++
@@ -154,7 +163,12 @@ export function vimKey(pending: string, key: string, text: string, caret: number
     if (!printable || !n) return { pending: '' }
     return { pending: '', text: text.slice(0, cs[i]) + key + text.slice(off(i + 1)), caret: cs[i] }
   }
-  if (pending === 'g') return key === 'g' ? { pending: '', row: { action: 'first' } } : { pending: '' }
+  if (pending === 'g') {
+    if (key === 'g') return { pending: '', row: { action: 'first' } }
+    if (key === 'x') return { pending: '', row: { action: 'open', link: n ? linkAt(text, cs, i) : undefined } }
+    return { pending: '' }
+  }
+  if (pending === 'y') return key === 'y' ? { pending: '', row: { action: 'yank' } } : { pending: '' }
   if (pending === 'z') {
     const action = ({ a: 'fold-toggle', c: 'fold', o: 'unfold' } as const)[key as 'a' | 'c' | 'o']
     return action ? { pending: '', row: { action } } : { pending: '' }
@@ -225,7 +239,16 @@ export function vimKey(pending: string, key: string, text: string, caret: number
       return { pending: '', row: { action: 'down', place: 'start' } }
     case 'G':
       return { pending: '', row: { action: 'last' } }
+    case 'Y':
+      return { pending: '', row: { action: 'yank' } }
+    case 'p':
+      return { pending: '', row: { action: 'put-below' } }
+    case 'P':
+      return { pending: '', row: { action: 'put-above' } }
+    case 'u':
+      return { pending: '', row: { action: 'undo' } }
     case 'g':
+    case 'y':
     case 'd':
     case 'c':
     case 'z':

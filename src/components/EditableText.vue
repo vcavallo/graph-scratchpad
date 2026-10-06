@@ -39,6 +39,8 @@ const props = withDefaults(
     debounce?: number
     /** Treat "1. " typed at the start as "number this list" (outline rows; not titles). */
     numberMarkers?: boolean
+    /** The node this edits, so vim's u can put its text back. */
+    nodeId?: string
   }>(),
   { placeholder: '', label: 'Text', debounce: 500, numberMarkers: false },
 )
@@ -73,6 +75,8 @@ let revealTimer: ReturnType<typeof setTimeout> | undefined
 let internal = false
 // Where normal mode last left a plain caret (on an empty line, or before a chip).
 let blockCaret: number | null = null
+// The line's text when an insert-mode session began here: one change, for u.
+let insertFrom: string | null = null
 
 const vimNormal = computed(() => vim.enabled && vim.mode === 'normal')
 
@@ -278,12 +282,31 @@ function onSelectionChange() {
   showBlock()
 }
 
+function beginInsert(text = current()) {
+  if (vim.enabled && insertFrom === null) insertFrom = text
+}
+
+/** Leaving insert mode (Esc, or leaving the line): what was typed is one change for u. */
+function endInsert() {
+  const from = insertFrom
+  insertFrom = null
+  const id = props.nodeId
+  if (from === null || !id) return
+  // A line just opened with o: u takes the whole line away, typing and all.
+  if (vim.undo?.kind === 'remove' && vim.undo.id === id) return
+  if (current() !== from) vim.undo = { kind: 'text', id, text: from }
+}
+
 watch(
   () => vim.enabled && vim.mode,
   (m) => {
     const e = el.value
     if (!e || document.activeElement !== e) return
-    if (m === 'normal') return showBlock()
+    if (m === 'normal') {
+      endInsert()
+      return showBlock()
+    }
+    beginInsert()
     // To insert mode (e.g. from the toolbar): a plain caret where the block was.
     markChip(null)
     blockCaret = null
@@ -299,6 +322,7 @@ function onVimKey(e: KeyboardEvent): boolean {
   if (vim.mode === 'insert') {
     if (e.key !== 'Escape' && !(e.ctrlKey && e.key === '[')) return false
     e.preventDefault()
+    endInsert()
     setCaret(ed, escapeCaret(current(), getCaret(ed)?.start ?? 0))
     vim.mode = 'normal'
     vim.pending = ''
@@ -307,7 +331,8 @@ function onVimKey(e: KeyboardEvent): boolean {
     return true
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return false
-  const r = vimKey(vim.pending, e.key, current(), getCaret(ed)?.start ?? 0)
+  const before = current()
+  const r = vimKey(vim.pending, e.key, before, getCaret(ed)?.start ?? 0)
   if (!r) return false
   e.preventDefault()
   vim.pending = r.pending
@@ -317,6 +342,8 @@ function onVimKey(e: KeyboardEvent): boolean {
     vim.goal ??= row.place.column
     row = { ...row, place: { column: vim.goal } }
   } else if (row || r.caret !== undefined) vim.goal = null
+  if (r.mode === 'insert' && !row) beginInsert(before)
+  else if (r.text !== undefined && r.text !== before && props.nodeId) vim.undo = { kind: 'text', id: props.nodeId, text: before }
   if (r.mode) vim.mode = r.mode
   if (r.text !== undefined) handle.replace(r.text, { caret: r.caret ?? 0 })
   else if (r.caret !== undefined) setCaret(ed, r.caret)
@@ -438,6 +465,7 @@ function revealSoon() {
 function onFocus() {
   focused = true
   document.addEventListener('selectionchange', onSelectionChange)
+  if (vim.enabled && vim.mode === 'insert') beginInsert()
   noteFocus(props.editorKey)
   emit('focus')
   revealSoon()
@@ -450,6 +478,7 @@ function onBlur() {
   markChip(null)
   blockCaret = null
   vim.pending = ''
+  endInsert()
   noteBlur(props.editorKey)
   sanitize()
   void flush()

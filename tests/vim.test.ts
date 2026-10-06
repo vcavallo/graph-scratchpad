@@ -113,6 +113,19 @@ describe('vim keys', () => {
     expect(vimKey('d', 'Shift', 'abc', 0)).toBeNull()
   })
 
+  it('yanks, puts, undoes, and opens links', () => {
+    expect(press('a', 0, ['y', 'y']).row).toEqual({ action: 'yank' })
+    expect(press('a', 0, ['Y']).row).toEqual({ action: 'yank' })
+    expect(press('a', 0, ['p']).row).toEqual({ action: 'put-below' })
+    expect(press('a', 0, ['P']).row).toEqual({ action: 'put-above' })
+    expect(press('a', 0, ['u']).row).toEqual({ action: 'undo' })
+    // gx on a chip opens what it links to; anywhere else, the line.
+    const t = `at ${L} now`
+    expect(press(t, 3, ['g', 'x']).row).toEqual({ action: 'open', link: '11111111-1111-4111-8111-111111111111' })
+    expect(press(t, 0, ['g', 'x']).row).toEqual({ action: 'open', link: undefined })
+    expect(press('', 0, ['g', 'x']).row).toEqual({ action: 'open', link: undefined })
+  })
+
   it('works on an empty line', () => {
     expect(press('', 0, ['x'])).toMatchObject({ text: '', caret: 0 })
     expect(press('', 0, ['l', '$', 'w'])).toMatchObject({ caret: 0 })

@@ -107,6 +107,8 @@ function onTitleArrow(dir: 'up' | 'down') {
 function onTitleVim(a: VimRowAction) {
   if (a.action === 'down' || a.action === 'first') outline.value?.focusFirst()
   else if (a.action === 'open-below') outline.value?.addChild('first')
+  else if (a.action === 'undo') outline.value?.vimUndo()
+  else if (a.action === 'open' && a.link) void router.push(`/n/${a.link}`)
 }
 
 function focusTitle() {
@@ -409,6 +411,7 @@ onMounted(async () => {
             class="title"
             :text="node.text"
             :editor-key="titleKey"
+            :node-id="id"
             :save="saveTitle"
             :placeholder="placeholder"
             label="Title"
