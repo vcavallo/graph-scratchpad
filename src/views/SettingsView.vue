@@ -376,6 +376,10 @@ async function askPersist() {
         <div><dt>Version</dt><dd>{{ version }}, built {{ buildTime }}</dd></div>
         <div v-if="info"><dt>Entries</dt><dd>{{ info.nodeCount }} live, {{ info.edgeCount }} connections</dd></div>
         <div v-if="info"><dt>Database</dt><dd>SQLite {{ info.sqliteVersion }}, schema {{ info.schemaVersion }}, {{ info.storage }}</dd></div>
+        <div>
+          <dt>Source</dt>
+          <dd><a href="https://github.com/vcavallo/graph-scratchpad" target="_blank" rel="noopener">github.com/vcavallo/graph-scratchpad</a>, public domain</dd>
+        </div>
       </dl>
     </section>
   </div>
