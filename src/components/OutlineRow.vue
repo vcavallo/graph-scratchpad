@@ -5,6 +5,7 @@ import Icon from './Icon.vue'
 import KindIcon from './KindIcon.vue'
 import type { FlatRow } from '@/lib/treeOps'
 import type { LineMarker, PastedRest, Shortcut } from '@/lib/editorDom'
+import type { VimRowAction } from '@/lib/vim'
 
 const props = defineProps<{ row: FlatRow; active: boolean; save: (id: string, text: string) => Promise<unknown> }>()
 const emit = defineEmits<{
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   atTrigger: [row: FlatRow, offset: number]
   chip: [id: string]
   pasteLines: [row: FlatRow, rest: PastedRest]
+  vim: [row: FlatRow, a: VimRowAction]
   marker: [row: FlatRow, m: LineMarker]
   toggle: [row: FlatRow]
   done: [row: FlatRow]
@@ -92,6 +94,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
       @paste-lines="(l) => emit('pasteLines', row, l)"
       number-markers
       @marker="(m) => emit('marker', row, m)"
+      @vim="(a) => emit('vim', row, a)"
     />
     <span
       v-if="row.progress"

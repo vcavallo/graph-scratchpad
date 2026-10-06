@@ -48,4 +48,11 @@ export const prefs = {
   set showDoneBacklinks(v: boolean) {
     write('gs.showDoneBacklinks', v ? '1' : null)
   },
+  /** Vim keys in the editor (for a computer keyboard). */
+  get vim(): boolean {
+    return read('gs.vim') === '1'
+  },
+  set vim(v: boolean) {
+    write('gs.vim', v ? '1' : null)
+  },
 }

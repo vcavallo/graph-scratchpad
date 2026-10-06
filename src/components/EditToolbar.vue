@@ -12,8 +12,10 @@ withDefaults(
     structure?: boolean
     /** Whether the line is a to-do; null hides the checkbox button (not an item). */
     task?: boolean | null
+    /** Vim keys' mode, shown (and switchable) when they're on. */
+    vim?: 'normal' | 'insert' | null
   }>(),
-  { canIndent: true, canOutdent: true, canUp: true, canDown: true, structure: true, task: null },
+  { canIndent: true, canOutdent: true, canUp: true, canDown: true, structure: true, task: null, vim: null },
 )
 const emit = defineEmits<{
   outdent: []
@@ -24,6 +26,7 @@ const emit = defineEmits<{
   task: []
   more: []
   close: []
+  vimMode: []
 }>()
 </script>
 
@@ -58,6 +61,16 @@ const emit = defineEmits<{
       <Icon name="more" />
     </button>
     <span class="spacer" />
+    <button
+      v-if="vim"
+      type="button"
+      class="vim-mode"
+      :class="vim"
+      :aria-label="vim === 'normal' ? 'Vim normal mode: switch to insert' : 'Vim insert mode: switch to normal'"
+      @click="emit('vimMode')"
+    >
+      {{ vim === 'normal' ? 'Normal' : 'Insert' }}
+    </button>
     <button type="button" aria-label="Hide keyboard" @click="emit('close')"><Icon name="keyboard-hide" /></button>
   </div>
 </template>

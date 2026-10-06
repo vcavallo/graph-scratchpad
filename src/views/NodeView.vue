@@ -25,6 +25,8 @@ import { subtreeIds } from '@/lib/treeOps'
 import { editing, focusEditor } from '@/state/focus'
 import { prefs } from '@/state/prefs'
 import { openLinkPicker } from '@/lib/linking'
+import type { VimRowAction } from '@/lib/vim'
+import { vimInsert } from '@/state/vim'
 import { chipClass, chipLabel, type LineMarker, type Shortcut } from '@/lib/editorDom'
 import { confirmDialog, openPicker, openSheet, pickerState, promptDialog, reportError, toast, type SheetAction } from '@/state/ui'
 
@@ -101,8 +103,20 @@ function onTitleArrow(dir: 'up' | 'down') {
   if (dir === 'down') outline.value?.focusFirst()
 }
 
+/** Vim keys in the title: j goes down into the list, o opens its first line. */
+function onTitleVim(a: VimRowAction) {
+  if (a.action === 'down' || a.action === 'first') outline.value?.focusFirst()
+  else if (a.action === 'open-below') outline.value?.addChild('first')
+}
+
 function focusTitle() {
   focusEditor(titleKey.value, 'end')
+}
+
+/** Focus the title to type a name (a new pad, Rename): with Vim keys, in insert mode. */
+function editTitle() {
+  vimInsert()
+  focusTitle()
 }
 
 function titleLink() {
@@ -288,7 +302,7 @@ function openMenu() {
         : { label: 'Make it a context…', icon: 'grid', run: chooseKind },
     )
   } else {
-    actions.push({ label: 'Rename', icon: 'edit', run: focusTitle })
+    actions.push({ label: 'Rename', icon: 'edit', run: editTitle })
   }
   if (kind.value !== 'category') {
     actions.push({ label: 'Add a fact…', icon: 'linked', run: () => addFact({ id: props.id, label: titleLabel.value }) })
@@ -328,7 +342,7 @@ onMounted(async () => {
   if (route.query.focus !== 'title') return
   await reload()
   await nextTick()
-  focusTitle()
+  editTitle()
   void router.replace({ query: {} })
 })
 </script>
@@ -400,6 +414,7 @@ onMounted(async () => {
             label="Title"
             @enter="onTitleEnter"
             @arrow="onTitleArrow"
+            @vim="onTitleVim"
             @at-trigger="(o) => openLinkPicker(titleKey, o, true, id)"
             @paste-lines="(r) => outline?.addLines([...r.inside, ...r.after])"
             @marker="onTitleMarker"

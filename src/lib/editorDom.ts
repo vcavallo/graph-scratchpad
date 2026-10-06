@@ -185,6 +185,22 @@ export function setCaret(el: HTMLElement, target: CaretTarget): void {
   sel.addRange(range)
 }
 
+/** Select from one offset to another (vim's block cursor over a character). */
+export function setSelection(el: HTMLElement, start: number, end: number): void {
+  const sel = document.getSelection()
+  if (!sel) return
+  setCaret(el, end)
+  if (!sel.rangeCount) return
+  const b = sel.getRangeAt(0)
+  const [endNode, endOffset] = [b.startContainer, b.startOffset]
+  setCaret(el, start)
+  if (!sel.rangeCount) return
+  const r = sel.getRangeAt(0).cloneRange()
+  r.setEnd(endNode, endOffset)
+  sel.removeAllRanges()
+  sel.addRange(r)
+}
+
 /** True when the caret sits on the first (or last) visual line of the element. */
 export function caretOnEdgeLine(el: HTMLElement, edge: 'first' | 'last'): boolean {
   const sel = document.getSelection()
