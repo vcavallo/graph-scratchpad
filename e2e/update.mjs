@@ -10,7 +10,7 @@ const BASE = process.env.DEPLOY_URL ?? 'http://127.0.0.1:8742'
 const { ctx, close } = await launch({ userDataDir: mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), 'gs-upd-')) })
 const page = ctx.pages()[0] ?? (await ctx.newPage())
 const errors = watchConsole(page)
-await page.goto(BASE + '/#/settings')
+await page.goto(BASE + '/#/settings?tab=about')
 await page.evaluate(() => navigator.serviceWorker.ready)
 await sleep(800)
 const version = () => page.locator('dt:has-text("Version") + dd').textContent()

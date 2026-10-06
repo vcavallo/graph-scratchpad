@@ -2005,3 +2005,12 @@ kbd {
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
 }
+
+.settings-tabs {
+  display: flex;
+  margin: 4px 0 4px;
+}
+
+.settings-tabs button {
+  flex: 1;
+}

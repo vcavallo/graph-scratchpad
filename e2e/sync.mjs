@@ -100,10 +100,12 @@ try {
   await b.keyboard.type('bread')
   await b.tap('[aria-label="Hide keyboard"]')
   await sleep(1800)
-  await b.goto(BASE + '/#/settings')
+  await b.goto(BASE + '/#/settings?tab=sync')
   await until(async () => (await b.innerText('.sync-card')).includes('Can’t reach the server'), 'B says it can’t reach the server')
   await shot(b, 'sync-offline')
+  await b.tap('.settings-tabs [role="tab"]:has-text("General")')
   assert((await b.innerText('.app-card')).includes('Running in a browser tab'), 'Settings says it is running in a tab')
+  await b.tap('.settings-tabs [role="tab"]:has-text("Sync & data")')
 
   // Back up: everything merges, on both.
   startServer()

@@ -25,7 +25,7 @@ for (let i = 1; i <= 400; i++) {
 const { writeFileSync } = await import('node:fs')
 const f = join(process.env.TMPDIR ?? tmpdir(), 'gs-big.json')
 writeFileSync(f, JSON.stringify({ app: 'graph-scratchpad', format: 1, schema_version: 2, exported_at: now, nodes, edges }))
-await page.goto(BASE + '/#/settings')
+await page.goto(BASE + '/#/settings?tab=sync')
 const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('button:has-text("Import")')])
 await chooser.setFiles(f)
 await page.tap('.dialog button:has-text("Replace")')
