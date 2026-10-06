@@ -31,8 +31,10 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,wasm,svg,png,woff2,webmanifest}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',
-        // The sync API is never served from the cache.
-        navigateFallbackDenylist: [/^\/api\//],
+        // The app routes with #hash, so only / is the app (offline, with or
+        // without a query string); anything else on the site (the sync API,
+        // other pages) always goes to the network.
+        navigateFallbackAllowlist: [/^\/(index\.html)?(\?.*)?$/],
         cleanupOutdatedCaches: true,
         // Take control of the page on first install, so a later update's
         // skip-waiting hands control over and the page can reload into it.
