@@ -23,7 +23,7 @@ import { chooseCategory } from '@/lib/contextActions'
 import { sendActions } from '@/lib/sendTo'
 import { noteToFact } from '@/lib/factActions'
 import { placeOn, type VimPlace, type VimRowAction } from '@/lib/vim'
-import { vim, vimInsert } from '@/state/vim'
+import { vim, vimInsert, type YankedLine } from '@/state/vim'
 import { parseTokens } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
@@ -130,7 +130,7 @@ function onEnter(row: T.FlatRow, { before, after }: { before: string; after: str
 }
 
 /** A new line right below this one: its first child when it's open, else its next sibling. */
-function openBelow(row: T.FlatRow) {
+function openBelow(row: T.FlatRow): string {
   const id = row.node.id
   const nid = crypto.randomUUID()
   void getEditor(key(id))?.flush()
@@ -145,10 +145,11 @@ function openBelow(row: T.FlatRow) {
     sync(api.createSibling(id, 'after', { id: nid, task }))
   }
   focusRow(nid, 'start')
+  return nid
 }
 
 /** A new line just above this one, focused (vim's O). */
-function openAbove(row: T.FlatRow) {
+function openAbove(row: T.FlatRow): string {
   const id = row.node.id
   const nid = crypto.randomUUID()
   const task = T.taskFor(T.locate(local.value, id)?.parent ?? local.value, row.node)
@@ -156,6 +157,96 @@ function openAbove(row: T.FlatRow) {
   T.insertSibling(local.value, id, 'before', T.newNode(nid, { task }))
   sync(api.createSibling(id, 'before', { id: nid, task }))
   focusRow(nid, 'start')
+  return nid
+}
+
+/** Where a line is: its parent and the sibling before it, so it can go back there. */
+function placeOf(id: string): { parent: string; after: string | null } {
+  const at = T.locate(local.value, id)
+  const parent = at?.parent ?? local.value
+  return { parent: parent.id, after: at && at.index > 0 ? parent.children[at.index - 1].id : null }
+}
+
+/** A copy of a line and what's inside it, as it reads now. */
+function yanked(n: TreeNode): YankedLine {
+  return {
+    id: n.id,
+    text: getEditor(key(n.id))?.text() ?? n.text,
+    task: n.task,
+    done: n.done,
+    numbered: n.numbered,
+    children: n.children.map(yanked),
+  }
+}
+
+function copyOf(l: YankedLine): PastedItem {
+  return { ...l, id: crypto.randomUUID(), children: l.children.map(copyOf) }
+}
+
+/** vim's p and P: the yanked line goes where o or O would open one. */
+async function put(row: T.FlatRow, where: 'below' | 'above') {
+  const reg = vim.register
+  if (!reg) return toast('Nothing to put yet: yy copies a line, dd cuts one.')
+  const to =
+    where === 'below' && row.hasChildren && !row.node.collapsed
+      ? { parent: row.node.id, after: null }
+      : where === 'below'
+        ? { parent: placeOf(row.node.id).parent, after: row.node.id }
+        : placeOf(row.node.id)
+  void getEditor(key(row.node.id))?.flush()
+  // The first p after dd moves the line itself here, so links to it still work.
+  if (reg.cut) {
+    vim.register = { ...reg, cut: false }
+    if (await api.restoreTo(reg.line.id, to.parent, to.after).catch(() => false)) {
+      vim.undo = { kind: 'remove', id: reg.line.id }
+      await props.reload()
+      focusRow(reg.line.id, 'start')
+      return
+    }
+  }
+  const item = copyOf(reg.line)
+  const node = pastedNode(item)
+  if (to.after) T.insertSibling(local.value, to.after, 'after', node)
+  else T.insertChild(local.value, to.parent, 'first', node)
+  sync(api.insertMany(to.after ? { after: to.after } : { parent: to.parent, position: 'first' }, [item]))
+  vim.undo = { kind: 'remove', id: item.id }
+  focusRow(item.id, 'start')
+}
+
+/** vim's u: one step back. u again redoes it, as in the original vi. */
+function vimUndo() {
+  const u = vim.undo
+  if (!u) return toast('Nothing to undo')
+  switch (u.kind) {
+    case 'text': {
+      const ed = getEditor(key(u.id)) ?? getEditor(`title:${u.id}`)
+      vim.undo = { kind: 'text', id: u.id, text: ed?.text() ?? T.locate(local.value, u.id)?.node.text ?? '' }
+      if (ed) ed.replace(u.text, { caret: Math.min(ed.caret() ?? 0, u.text.length) })
+      else sync(api.updateText(u.id, u.text))
+      return
+    }
+    case 'restore':
+      vim.undo = { kind: 'remove', id: u.id }
+      sync(api.restoreSubtree(u.id))
+      focusRow(u.id, 'start')
+      return
+    case 'remove': {
+      vim.undo = { kind: 'restore', id: u.id }
+      const i = rows.value.findIndex((r) => r.node.id === u.id)
+      const inside = i >= 0 ? T.subtreeIds(rows.value[i].node) : []
+      const near = i >= 0 ? (rows.value[i - 1] ?? rows.value.slice(i + 1).find((r) => !inside.includes(r.node.id))) : undefined
+      removeLocal(u.id)
+      sync(api.deleteSubtree(u.id))
+      if (near) focusRow(near.node.id, 'start')
+      return
+    }
+    case 'place':
+      // Redo needs to know where it is now; off this page, it's a one-way trip.
+      vim.undo = T.locate(local.value, u.id) ? { kind: 'place', id: u.id, ...placeOf(u.id) } : null
+      sync(api.moveSubtree(u.id, u.parent, u.after))
+      refocus(u.id, caretOf(u.id))
+      return
+  }
 }
 
 /** Vim keys that reach past the line: move between lines, open, delete, indent, fold. */
@@ -177,15 +268,31 @@ function onVim(row: T.FlatRow, a: VimRowAction) {
     case 'last':
       return void go(rows.value[rows.value.length - 1], 'start')
     case 'open-below':
-      return openBelow(row)
+      vim.undo = { kind: 'remove', id: openBelow(row) }
+      return
     case 'open-above':
-      return openAbove(row)
+      vim.undo = { kind: 'remove', id: openAbove(row) }
+      return
     case 'delete':
+      vim.register = { line: yanked(row.node), cut: true }
+      vim.undo = { kind: 'restore', id: row.node.id }
       return deleteRow(row.node.id)
+    case 'yank':
+      vim.register = { line: yanked(row.node), cut: false }
+      return
+    case 'put-below':
+    case 'put-above':
+      return void put(row, a.action === 'put-below' ? 'below' : 'above')
+    case 'undo':
+      return vimUndo()
+    case 'open':
+      return void router.push(`/n/${a.link ?? row.node.ref ?? row.node.id}`)
     case 'indent':
-      return doIndent(row.node.id)
-    case 'outdent':
-      return doOutdent(row.node.id)
+    case 'outdent': {
+      const was = { kind: 'place' as const, id: row.node.id, ...placeOf(row.node.id) }
+      if (a.action === 'indent' ? doIndent(row.node.id) : doOutdent(row.node.id)) vim.undo = was
+      return
+    }
     case 'fold':
     case 'unfold':
     case 'fold-toggle':
@@ -238,20 +345,22 @@ async function onBackspaceStart(row: T.FlatRow, { empty }: { empty: boolean }) {
   }
 }
 
-function doIndent(id: string) {
+function doIndent(id: string): boolean {
   const caret = caretOf(id)
   void getEditor(key(id))?.flush()
-  if (!T.indent(local.value, id)) return
+  if (!T.indent(local.value, id)) return false
   sync(api.indent(id))
   refocus(id, caret)
+  return true
 }
 
-function doOutdent(id: string) {
+function doOutdent(id: string): boolean {
   const caret = caretOf(id)
   void getEditor(key(id))?.flush()
-  if (!T.outdent(local.value, id)) return
+  if (!T.outdent(local.value, id)) return false
   sync(api.outdent(id))
   refocus(id, caret)
+  return true
 }
 
 function doMove(id: string, dir: 'up' | 'down') {
@@ -585,7 +694,7 @@ function setRootChildrenTask(task: boolean) {
   setChildrenTask(local.value, task)
 }
 
-defineExpose({ addChild, addLines, focusFirst, setRootChildrenTask })
+defineExpose({ addChild, addLines, focusFirst, setRootChildrenTask, vimUndo })
 </script>
 
 <template>

@@ -93,6 +93,7 @@ const saveText = (t: string) => props.save(node.value.id, t)
       @chip="(id) => emit('chip', id)"
       @paste-lines="(l) => emit('pasteLines', row, l)"
       number-markers
+      :node-id="node.id"
       @marker="(m) => emit('marker', row, m)"
       @vim="(a) => emit('vim', row, a)"
     />

@@ -556,6 +556,26 @@ describe('malformed sort keys from imports', () => {
   })
 })
 
+describe('restoreTo', () => {
+  it('brings a deleted line back somewhere else, with its children and links', () => {
+    const pad = s.createPad('P')
+    const a = s.createChild(pad, undefined, { text: 'a' })
+    const x = s.createChild(pad, undefined, { text: 'x' })
+    const kid = s.createChild(x, undefined, { text: 'kid' })
+    const b = s.createChild(pad, undefined, { text: 'b' })
+    const ref = s.createChild(b, undefined, { text: `see ${makeToken(x)}` })
+    s.deleteSubtree(x)
+    expect(s.restoreTo(x, b, ref)).toBe(true)
+    const t = s.getTree(pad)
+    expect(t.children.map((c) => c.text)).toEqual(['a', 'b'])
+    expect(t.children[1].children.map((c) => c.id)).toEqual([ref, x])
+    expect(t.children[1].children[1].children.map((c) => c.id)).toEqual([kid])
+    expect(s.getBacklinks(x).map((l) => l.source.id)).toEqual([ref])
+    // Only a deleted line can be brought back.
+    expect(s.restoreTo(x, pad, a)).toBe(false)
+  })
+})
+
 describe('insertMany', () => {
   it('inserts nested items, with numbered lists', () => {
     const pad = s.createPad('P')

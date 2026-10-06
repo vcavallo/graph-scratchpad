@@ -702,6 +702,24 @@ export class Store {
     })
   }
 
+  /**
+   * Bring back a line deleted with its subtree, but somewhere else (vim's p
+   * after dd): the same node, so links to it keep working. False when it
+   * isn't deleted (any more).
+   */
+  restoreTo(id: string, parentId: string, afterSiblingId: string | null): boolean {
+    return this.db.tx(() => {
+      const n = this.#raw(id)
+      if (!n || n.purged || n.deleted_at === null) return false
+      this.db.exec(
+        `UPDATE nodes SET deleted_at = NULL WHERE deleted_at = ? AND id IN (SELECT value FROM json_each(?))`,
+        [n.deleted_at, JSON.stringify(this.#subtreeIds(id))],
+      )
+      this.moveSubtree(id, parentId, afterSiblingId)
+      return true
+    })
+  }
+
   // ------------------------------------------------------- tree operations
 
   /** Make the node the last child of its previous sibling. No-op for a first child. */
