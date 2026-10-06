@@ -1,0 +1,8 @@
+node_modules
+dist
+e2e/shots
+*.log
+.env.deploy
+CLAUDE.local.md
+.env*
+.vercel

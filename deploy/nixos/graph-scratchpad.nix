@@ -1,12 +1,16 @@
-# Graph Scratchpad on a NixOS host: the static app plus the sync server, one
-# Node process (nodejs from nixpkgs), published on the tailnet over HTTPS by
-# `tailscale serve`. Releases are pushed by `npm run deploy:pi` into
+# Graph Paper on a NixOS host: the static app plus the sync server, one Node
+# process (nodejs from nixpkgs), optionally published on your tailnet over HTTPS
+# by `tailscale serve`. Releases are pushed by `npm run deploy:remote` into
 # ${root}/releases/<stamp> with ${root}/current pointing at the live one, so
 # app updates don't need a rebuild; this module only provides the runtime.
 #
 # Usage, in the host's configuration:
-#   imports = [ ../../modules/system/graph-scratchpad.nix ];
-#   services.graph-scratchpad.enable = true;
+#   imports = [ ./graph-scratchpad.nix ];
+#   services.graph-scratchpad = {
+#     enable = true;
+#     user = "alice";          # the account you deploy (rsync over ssh) as
+#     tailnetHttpsPort = 443;   # optional: HTTPS on your tailnet via tailscale serve
+#   };
 { config, lib, pkgs, ... }:
 
 let
@@ -15,11 +19,11 @@ let
 in
 {
   options.services.graph-scratchpad = {
-    enable = lib.mkEnableOption "Graph Scratchpad (static app and sync server)";
+    enable = lib.mkEnableOption "Graph Paper (static app and sync server)";
 
     user = lib.mkOption {
       type = lib.types.str;
-      default = "vcavallo";
+      example = "alice";
       description = "Account that runs the server and owns the releases (deploys rsync in as this user).";
     };
 
@@ -37,8 +41,9 @@ in
 
     tailnetHttpsPort = lib.mkOption {
       type = lib.types.nullOr lib.types.port;
-      default = 443;
-      description = "Publish on the tailnet at https://<host>.<tailnet>.ts.net:<port> (null: don't).";
+      default = null;
+      example = 443;
+      description = "Publish on your tailnet with `tailscale serve` at https://<host>.<tailnet>.ts.net:<port> (null: don't; put your own HTTPS in front).";
     };
 
     anthropicKeyFile = lib.mkOption {
@@ -62,7 +67,7 @@ in
     ];
 
     systemd.services.graph-scratchpad = {
-      description = "Graph Scratchpad (static app + sync)";
+      description = "Graph Paper (static app + sync)";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
       # Nothing to serve until the first deploy; don't fail the rebuild over it.
@@ -89,7 +94,7 @@ in
     };
 
     systemd.services.graph-scratchpad-tailnet = lib.mkIf (cfg.tailnetHttpsPort != null) {
-      description = "Publish Graph Scratchpad on the tailnet";
+      description = "Publish Graph Paper on the tailnet";
       wantedBy = [ "multi-user.target" ];
       after = [ "tailscaled.service" ];
       wants = [ "tailscaled.service" ];

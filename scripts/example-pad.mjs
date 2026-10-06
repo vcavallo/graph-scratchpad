@@ -2,12 +2,16 @@
 // device: errands and people written in different ways, so the link labels
 // (local guesses, then the server's model) have something to work on. Places
 // and people live inside the pad, so deleting the pad removes all of it.
-// Usage: node scripts/example-pad.mjs [https://server]   (default: the Pi)
+// Usage: node scripts/example-pad.mjs https://your-sync-server
 
 import { randomUUID } from 'node:crypto'
 import { generateNKeysBetween } from 'fractional-indexing'
 
-const BASE = (process.argv[2] ?? 'https://utility-server-pi.pirate-emperor.ts.net').replace(/\/$/, '')
+if (!process.argv[2]) {
+  console.error('Usage: node scripts/example-pad.mjs https://your-sync-server')
+  process.exit(1)
+}
+const BASE = process.argv[2].replace(/\/$/, '')
 const DEVICE = 'example-pad'
 const TITLE = 'Relations playground'
 

@@ -15,7 +15,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "deploy": "npm run build && npm test && node scripts/deploy.mjs",
     "serve": "node server/serve.mjs dist",
-    "deploy:pi": "npm run build && npm test && node scripts/deploy.mjs --pi"
+    "deploy:remote": "npm run build && npm test && node --env-file-if-exists=.env.deploy scripts/deploy.mjs --remote"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
