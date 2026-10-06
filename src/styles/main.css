@@ -322,6 +322,15 @@ a {
   font-size: 14px;
 }
 
+/* From the sync server (a plan running out, say): a bar at the top that scrolls away with the page. */
+.banner-notice {
+  margin: 0;
+  border-radius: 0;
+  background: var(--wash-strong);
+  color: var(--ink);
+  font-size: 14px;
+}
+
 .banner-update {
   position: fixed;
   left: 12px;

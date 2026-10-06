@@ -14,6 +14,14 @@ export interface WorkerError {
   code?: string
 }
 
+/** A message from the sync server for the whole app, as a banner (a plan running out, say). */
+export interface SyncNotice {
+  text: string
+  /** A page in the app to go to (a route, like '/settings'), with the button's label. */
+  to?: string
+  action?: string
+}
+
 /** What the page shows about sync (Settings, and the first-run note). */
 export interface SyncStatus {
   /** This site has a sync server. */
@@ -32,6 +40,8 @@ export interface SyncStatus {
   cursor: number
   /** Where the server announces changes (server-sent events); empty when it doesn't. */
   events: string
+  /** Something to show across the app, from the sync connection (plugins/sync.ts), or null. */
+  notice: SyncNotice | null
   /** Sync switched itself on in this session because the site offers it. */
   autoEnabled: boolean
   /** The model the server labels links with, if any. */

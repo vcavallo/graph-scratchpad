@@ -8,6 +8,7 @@ import ActionSheet from './components/ActionSheet.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import Toasts from './components/Toasts.vue'
 import { dbState, syncState } from './db/api'
+import { router } from './router'
 import { editing } from './state/focus'
 import { closePicker, closeSheet, confirmState, pickerState, toast } from './state/ui'
 
@@ -53,6 +54,17 @@ watch(
   <div class="app" :class="{ editing: chromeHidden }">
     <div v-if="dbState.storage === 'memory'" class="banner banner-danger" role="alert">
       Not saving: on-device storage is unavailable here, so changes vanish when you close this tab.
+    </div>
+    <div v-if="syncState.notice && !chromeHidden" class="banner banner-notice" role="status">
+      <span>{{ syncState.notice.text }}</span>
+      <button
+        v-if="syncState.notice.to"
+        type="button"
+        class="btn btn-small btn-primary"
+        @click="router.push(syncState.notice.to!)"
+      >
+        {{ syncState.notice.action || 'Open' }}
+      </button>
     </div>
     <div v-if="needRefresh" class="banner banner-update">
       <span>A new version is ready.</span>
