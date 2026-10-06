@@ -17,7 +17,7 @@ import {
   ZWSP,
   type CaretTarget,
   type LineMarker,
-  type PastedLine,
+  type PastedRest,
   type Shortcut,
 } from '@/lib/editorDom'
 import { registerEditor, unregisterEditor, noteBlur, noteFocus, type EditorHandle } from '@/state/focus'
@@ -47,7 +47,7 @@ const emit = defineEmits<{
   shortcut: [name: Shortcut]
   atTrigger: [offset: number]
   chip: [id: string]
-  pasteLines: [lines: PastedLine[]]
+  pasteLines: [rest: PastedRest]
   /** "[] ", "[x] " or "- " typed at the start, or a pasted checklist line: switch the line's kind. */
   marker: [m: LineMarker]
   focus: []
@@ -289,12 +289,12 @@ function onPaste(e: ClipboardEvent) {
   const lines = pasteLines(text)
   if (lines.length === 0) return
   const wasEmpty = current() === ''
-  insertText(lines[0].text)
-  const first = lines[0]
+  const [first, ...after] = lines
+  insertText(first.text)
   if (wasEmpty && (first.task !== undefined || (first.numbered && props.numberMarkers))) {
     emit('marker', { task: first.task, done: !!first.done, numbered: props.numberMarkers && first.numbered })
   }
-  if (lines.length > 1) emit('pasteLines', lines.slice(1))
+  if (first.children.length || after.length) emit('pasteLines', { inside: first.children, after })
 }
 
 function onClick(e: MouseEvent) {

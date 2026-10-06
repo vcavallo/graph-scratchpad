@@ -12,7 +12,7 @@ import Icon from './Icon.vue'
 import { api } from '@/db/api'
 import type { TreeNode } from '@/db/types'
 import * as T from '@/lib/treeOps'
-import type { CaretTarget, LineMarker, PastedLine, Shortcut } from '@/lib/editorDom'
+import type { CaretTarget, LineMarker, PastedLine, PastedRest, Shortcut } from '@/lib/editorDom'
 import { openLinkPicker } from '@/lib/linking'
 import { editing, focusEditor, getEditor } from '@/state/focus'
 import { openPicker, openSheet, pickerState, reportError, toast, type SheetAction } from '@/state/ui'
@@ -292,22 +292,79 @@ function onShortcut(row: T.FlatRow, name: Shortcut) {
   }
 }
 
-/** Pasted lines keep their checkboxes; lines without one follow the line they're pasted into. */
-function pastedItems(lines: PastedLine[], task: boolean) {
-  return lines.map((l) => ({ id: crypto.randomUUID(), text: l.text, task: l.task ?? task, done: !!l.done }))
+interface PastedItem {
+  id: string
+  text: string
+  task: boolean
+  done: boolean
+  numbered: boolean
+  children: PastedItem[]
 }
 
-function onPasteLines(row: T.FlatRow, lines: PastedLine[]) {
+/**
+ * Pasted lines keep what their markers said (to-do or note); a line without
+ * one follows the line before it, and the first line of a list follows
+ * `task` (the line it's under, or the line it's pasted after).
+ */
+function pastedItems(lines: PastedLine[], task: boolean): PastedItem[] {
+  let prev = task
+  return lines.map((l) => {
+    const t = l.task ?? prev
+    prev = t
+    return {
+      id: crypto.randomUUID(),
+      text: l.text,
+      task: t,
+      done: t && !!l.done,
+      numbered: l.children.some((c) => c.numbered),
+      children: pastedItems(l.children, t),
+    }
+  })
+}
+
+function pastedNode(it: PastedItem): TreeNode {
+  const n = T.newNode(it.id, it)
+  n.numbered = it.numbered
+  n.children = it.children.map(pastedNode)
+  return n
+}
+
+/** The last line of pasted items, as they read: the deepest last one. */
+function lastPasted(items: PastedItem[]): string | undefined {
+  const it = items[items.length - 1]
+  return it && (lastPasted(it.children) ?? it.id)
+}
+
+/** Put pasted items in the local tree: as `parent`'s first children, or after `sibling`. */
+function placePasted(items: PastedItem[], at: { parent: TreeNode } | { after: string }) {
+  items.forEach((it, i) => {
+    const node = pastedNode(it)
+    if (i > 0) T.insertSibling(local.value, items[i - 1].id, 'after', node)
+    else if ('parent' in at) T.insertChild(local.value, at.parent.id, 'first', node)
+    else T.insertSibling(local.value, at.after, 'after', node)
+  })
+}
+
+/** A paste of several lines into a row: its first line is already in the row; the rest keep their shape. */
+function onPasteLines(row: T.FlatRow, rest: PastedRest) {
   void getEditor(key(row.node.id))?.flush()
-  if (lines.some((l) => l.numbered)) numberListOf(row.node.id)
-  const items = pastedItems(lines, T.taskFor(T.locate(local.value, row.node.id)?.parent ?? local.value, row.node))
-  let after = row.node.id
-  for (const it of items) {
-    T.insertSibling(local.value, after, 'after', T.newNode(it.id, it))
-    after = it.id
+  const n = row.node
+  // Lines indented under the first one go under this row, before its own children.
+  const inside = pastedItems(rest.inside, T.taskFor(n, n.children[0] ?? n))
+  if (inside.length) {
+    if (rest.inside.some((l) => l.numbered) && !n.numbered) setNumbered(n, true)
+    if (n.collapsed) sync(api.setCollapsed(n.id, false))
+    placePasted(inside, { parent: n })
+    sync(api.insertMany({ parent: n.id, position: 'first' }, inside))
   }
-  sync(api.insertMany({ after: row.node.id }, items))
-  focusRow(after, 'end')
+  const after = pastedItems(rest.after, T.taskFor(T.locate(local.value, n.id)?.parent ?? local.value, n))
+  if (after.length) {
+    if (rest.after.some((l) => l.numbered)) numberListOf(n.id)
+    placePasted(after, { after: n.id })
+    sync(api.insertMany({ after: n.id }, after))
+  }
+  const last = lastPasted(after) ?? lastPasted(inside)
+  if (last) focusRow(last, 'end')
 }
 
 function deleteRow(id: string) {
@@ -449,17 +506,14 @@ function addChild(position: 'first' | 'last') {
   focusRow(nid, 'start')
 }
 
-/** Lines pasted into the title become the first items, in order. */
+/** Lines pasted into the title become the first items, in order, keeping their shape. */
 function addLines(lines: PastedLine[]) {
   if (lines.some((l) => l.numbered) && !local.value.numbered) setNumbered(local.value, true)
   const items = pastedItems(lines, T.taskFor(local.value, local.value.children[0]))
-  items.forEach((it, i) => {
-    const node = T.newNode(it.id, it)
-    if (i === 0) T.insertChild(local.value, local.value.id, 'first', node)
-    else T.insertSibling(local.value, items[i - 1].id, 'after', node)
-  })
+  placePasted(items, { parent: local.value })
   sync(api.insertMany({ parent: local.value.id, position: 'first' }, items))
-  if (items.length) focusRow(items[items.length - 1].id, 'end')
+  const last = lastPasted(items)
+  if (last) focusRow(last, 'end')
 }
 
 function focusFirst(): boolean {

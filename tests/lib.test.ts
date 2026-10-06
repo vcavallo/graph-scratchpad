@@ -77,20 +77,50 @@ describe('list markers', () => {
 
   it('drops numbers from pasted lines and remembers they were numbered', () => {
     expect(pasteLines('1. Unplug it\n2) Open the case\n3.5 inch screws')).toEqual([
-      { text: 'Unplug it', numbered: true },
-      { text: 'Open the case', numbered: true },
-      { text: '3.5 inch screws' },
+      { text: 'Unplug it', task: false, numbered: true, children: [] },
+      { text: 'Open the case', task: false, numbered: true, children: [] },
+      { text: '3.5 inch screws', children: [] },
     ])
   })
 
-  it('keeps checkboxes from pasted lines and drops other markers', () => {
-    expect(pasteLines('- [ ] milk\n- [x] eggs\n* bread\n\n  plain  \n[] jam')).toEqual([
-      { text: 'milk', task: true, done: false },
-      { text: 'eggs', task: true, done: true },
-      { text: 'bread' },
-      { text: 'plain' },
-      { text: 'jam', task: true, done: false },
+  it('keeps checkboxes, makes bullets notes, and leaves unmarked lines to follow', () => {
+    expect(pasteLines('- [ ] milk\n- [x] eggs\n* bread\n\nplain  \n[] jam\n1. [ ] first')).toEqual([
+      { text: 'milk', task: true, done: false, children: [] },
+      { text: 'eggs', task: true, done: true, children: [] },
+      { text: 'bread', task: false, children: [] },
+      { text: 'plain', children: [] },
+      { text: 'jam', task: true, done: false, children: [] },
+      { text: 'first', task: true, done: false, numbered: true, children: [] },
     ])
+  })
+
+  // Just the shape: text, with children when there are any.
+  type Shape = string | [string, Shape[]]
+  const shape = (lines: ReturnType<typeof pasteLines>): Shape[] =>
+    lines.map((l) => (l.children.length ? [l.text, shape(l.children)] : l.text))
+
+  it('nests pasted lines by indentation, whatever its width', () => {
+    const md = ['- Garage cleanout', '  1. Sort the shelves', '  2. [ ] Haul boxes', '     - [x] borrow the truck', '  - ask about paint', '- [ ] Buy PVC elbows'].join('\n')
+    expect(shape(pasteLines(md))).toEqual([
+      ['Garage cleanout', ['Sort the shelves', ['Haul boxes', ['borrow the truck']], 'ask about paint']],
+      'Buy PVC elbows',
+    ])
+    // Tabs, four spaces, and a line indented too far: one level each.
+    expect(shape(pasteLines('a\n\tb\n\t\t\t\tc\n    d\ne'))).toEqual([['a', [['b', ['c']], 'd']], 'e'])
+    // A dedent between two levels goes under the shallower one.
+    expect(shape(pasteLines('a\n    b\n  c'))).toEqual([['a', ['b', 'c']]])
+    // Copied from the middle of a document: the first line's indent is the top level.
+    expect(shape(pasteLines('    a\n      b\n    c'))).toEqual([['a', ['b']], 'c'])
+  })
+
+  it('makes headings parents of what follows them, by level', () => {
+    const md = ['# Groceries', '- milk', '  - oat', '## Later', '[ ] flour', '# House ##', 'Fix the gate', '---', '#hashtag stays text'].join('\n')
+    const lines = pasteLines(md)
+    expect(shape(lines)).toEqual([
+      ['Groceries', [['milk', ['oat']], ['Later', ['flour']]]],
+      ['House', ['Fix the gate', '#hashtag stays text']],
+    ])
+    expect(lines[0].task).toBe(false)
   })
 })
 

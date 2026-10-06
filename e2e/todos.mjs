@@ -87,7 +87,7 @@ await page.keyboard.press('Control+Shift+Enter')
 await sleep(100)
 assert(await hasCheck('butter'), 'and a to-do again')
 
-// Pasted checklists keep their boxes; plain lines follow the line pasted into.
+// Pasted checklists keep their boxes; plain lines follow the line before them.
 await page.keyboard.press('Enter')
 await paste('- [ ] jam\n- [x] tea\nhoney')
 await sleep(500)
