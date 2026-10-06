@@ -22,6 +22,8 @@ import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
 import { sendActions } from '@/lib/sendTo'
 import { noteToFact } from '@/lib/factActions'
+import { placeOn, type VimPlace, type VimRowAction } from '@/lib/vim'
+import { vim, vimInsert } from '@/state/vim'
 import { parseTokens } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
@@ -110,21 +112,11 @@ function onEnter(row: T.FlatRow, { before, after }: { before: string; after: str
     doOutdent(id)
     return
   }
+  if (!after) return openBelow(row)
   const nid = crypto.randomUUID()
   // A new line is a to-do if the line it comes from is one.
   const task = T.taskFor(T.locate(local.value, id)?.parent ?? local.value, row.node)
-  if (!after) {
-    void ed?.flush()
-    if (row.hasChildren && !row.node.collapsed) {
-      const firstTask = T.taskFor(row.node, row.node.children[0])
-      T.insertChild(local.value, id, 'first', T.newNode(nid, { task: firstTask }))
-      sync(api.createChild(id, null, { id: nid, task: firstTask }))
-    } else {
-      T.insertSibling(local.value, id, 'after', T.newNode(nid, { task }))
-      sync(api.createSibling(id, 'after', { id: nid, task }))
-    }
-    focusRow(nid, 'start')
-  } else if (!before) {
+  if (!before) {
     void ed?.flush()
     T.insertSibling(local.value, id, 'before', T.newNode(nid, { task }))
     sync(api.createSibling(id, 'before', { id: nid, task }))
@@ -134,6 +126,70 @@ function onEnter(row: T.FlatRow, { before, after }: { before: string; after: str
     T.insertSibling(local.value, id, 'after', T.newNode(nid, { text: after, task }))
     sync(api.splitNode(id, before, after, nid))
     focusRow(nid, 'start')
+  }
+}
+
+/** A new line right below this one: its first child when it's open, else its next sibling. */
+function openBelow(row: T.FlatRow) {
+  const id = row.node.id
+  const nid = crypto.randomUUID()
+  void getEditor(key(id))?.flush()
+  if (row.hasChildren && !row.node.collapsed) {
+    const firstTask = T.taskFor(row.node, row.node.children[0])
+    T.insertChild(local.value, id, 'first', T.newNode(nid, { task: firstTask }))
+    sync(api.createChild(id, null, { id: nid, task: firstTask }))
+  } else {
+    // A new line is a to-do if the line it comes from is one.
+    const task = T.taskFor(T.locate(local.value, id)?.parent ?? local.value, row.node)
+    T.insertSibling(local.value, id, 'after', T.newNode(nid, { task }))
+    sync(api.createSibling(id, 'after', { id: nid, task }))
+  }
+  focusRow(nid, 'start')
+}
+
+/** A new line just above this one, focused (vim's O). */
+function openAbove(row: T.FlatRow) {
+  const id = row.node.id
+  const nid = crypto.randomUUID()
+  const task = T.taskFor(T.locate(local.value, id)?.parent ?? local.value, row.node)
+  void getEditor(key(id))?.flush()
+  T.insertSibling(local.value, id, 'before', T.newNode(nid, { task }))
+  sync(api.createSibling(id, 'before', { id: nid, task }))
+  focusRow(nid, 'start')
+}
+
+/** Vim keys that reach past the line: move between lines, open, delete, indent, fold. */
+function onVim(row: T.FlatRow, a: VimRowAction) {
+  const i = rows.value.findIndex((r) => r.node.id === row.node.id)
+  const go = (r: T.FlatRow | undefined, place: VimPlace) => {
+    if (!r) return false
+    focusEditor(key(r.node.id), placeOn(getEditor(key(r.node.id))?.text() ?? r.node.text, place))
+    return true
+  }
+  switch (a.action) {
+    case 'down':
+      return void go(rows.value[i + 1], a.place)
+    case 'up':
+      if (!go(rows.value[i - 1], a.place)) emit('exitTop')
+      return
+    case 'first':
+      return void go(rows.value[0], 'start')
+    case 'last':
+      return void go(rows.value[rows.value.length - 1], 'start')
+    case 'open-below':
+      return openBelow(row)
+    case 'open-above':
+      return openAbove(row)
+    case 'delete':
+      return deleteRow(row.node.id)
+    case 'indent':
+      return doIndent(row.node.id)
+    case 'outdent':
+      return doOutdent(row.node.id)
+    case 'fold':
+    case 'unfold':
+    case 'fold-toggle':
+      return setCollapsed(row, a.action === 'fold' || (a.action === 'fold-toggle' && !row.node.collapsed))
   }
 }
 
@@ -498,6 +554,7 @@ function onChip(id: string) {
 
 /** Add a new first child (Enter in the title) or last child (the add button). */
 function addChild(position: 'first' | 'last') {
+  vimInsert()
   const nid = crypto.randomUUID()
   const kids = local.value.children
   const task = T.taskFor(local.value, position === 'first' ? kids[0] : kids[kids.length - 1])
@@ -550,6 +607,7 @@ defineExpose({ addChild, addLines, focusFirst, setRootChildrenTask })
       @toggle="(r) => setCollapsed(r, !r.node.collapsed)"
       @done="toggleDone"
       @marker="onMarker"
+      @vim="onVim"
       @links="(r) => router.push({ path: `/n/${r.node.id}`, query: { show: 'links' } })"
     />
     <button type="button" class="add-row" @click="addChild('last')">
@@ -560,6 +618,8 @@ defineExpose({ addChild, addLines, focusFirst, setRootChildrenTask })
       <EditToolbar
         v-if="toolbarState && !pickerState"
         v-bind="toolbarState"
+        :vim="vim.enabled ? vim.mode : null"
+        @vim-mode="vim.mode = vim.mode === 'normal' ? 'insert' : 'normal'"
         @outdent="doOutdent(activeRow!.node.id)"
         @indent="doIndent(activeRow!.node.id)"
         @up="doMove(activeRow!.node.id, 'up')"

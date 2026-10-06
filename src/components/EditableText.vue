@@ -4,7 +4,7 @@
 // by a re-render; it is rebuilt from `text` only when the editor isn't focused
 // or the change came from outside.
 
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   caretOnEdgeLine,
   getCaret,
@@ -12,6 +12,7 @@ import {
   renderEditor,
   serialize,
   setCaret,
+  setSelection,
   typedMarker,
   updateChips,
   ZWSP,
@@ -24,6 +25,9 @@ import { registerEditor, unregisterEditor, noteBlur, noteFocus, type EditorHandl
 import { refCache, refsVersion } from '@/state/refs'
 import { reportError } from '@/state/ui'
 import { ApiError } from '@/db/api'
+import { tokenRe } from '@/lib/tokens'
+import { cellRange, escapeCaret, normalCaret, vimKey, type VimRowAction } from '@/lib/vim'
+import { vim } from '@/state/vim'
 
 const props = withDefaults(
   defineProps<{
@@ -50,6 +54,8 @@ const emit = defineEmits<{
   pasteLines: [rest: PastedRest]
   /** "[] ", "[x] " or "- " typed at the start, or a pasted checklist line: switch the line's kind. */
   marker: [m: LineMarker]
+  /** Vim keys asked for something beyond this line (j, k, o, dd, >>…). */
+  vim: [a: VimRowAction]
   focus: []
   blur: []
 }>()
@@ -63,6 +69,12 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let inFlight = 0
 let lastAt = -1
 let revealTimer: ReturnType<typeof setTimeout> | undefined
+// Our own insertText, let through in vim's normal mode.
+let internal = false
+// Where normal mode last left a plain caret (on an empty line, or before a chip).
+let blockCaret: number | null = null
+
+const vimNormal = computed(() => vim.enabled && vim.mode === 'normal')
 
 function current(): string {
   return el.value ? serialize(el.value) : committed
@@ -210,6 +222,11 @@ function caretAtStart(): boolean {
 }
 
 function onBeforeInput(e: InputEvent) {
+  // Normal mode doesn't type (a soft keyboard, a dead key, cut…).
+  if (vimNormal.value && !internal) {
+    e.preventDefault()
+    return
+  }
   const type = e.inputType
   if (type === 'insertParagraph' || type === 'insertLineBreak') {
     e.preventDefault()
@@ -224,8 +241,93 @@ function onBeforeInput(e: InputEvent) {
   }
 }
 
+// ------------------------------------------------------------ vim keys
+
+/** Mark the chip the normal-mode cursor is on (a chip can't show a selection). */
+function markChip(index: number | null) {
+  el.value?.querySelectorAll('.chip.vim-cursor').forEach((c) => c.classList.remove('vim-cursor'))
+  if (index !== null) el.value?.querySelectorAll('.chip[data-id]')[index]?.classList.add('vim-cursor')
+}
+
+/** Normal mode: the caret is a block on the character it's on. */
+function showBlock() {
+  const e = el.value
+  if (!e || document.activeElement !== e || !vimNormal.value) return
+  const t = current()
+  const at = normalCaret(t, getCaret(e)?.start ?? 0)
+  const r = cellRange(t, at)
+  if (r && !(t.startsWith('[[', r.start) && r.end - r.start > 2)) {
+    markChip(null)
+    blockCaret = null
+    setSelection(e, r.start, r.end)
+    return
+  }
+  // An empty line, or a chip: a plain caret there (styled as a block).
+  markChip(r ? [...t.slice(0, r.start).matchAll(tokenRe())].length : null)
+  blockCaret = r ? r.start : 0
+  setCaret(e, blockCaret)
+}
+
+/** A click (or anything else) left a plain caret in normal mode: make it a block again. */
+function onSelectionChange() {
+  const e = el.value
+  if (!e || !vimNormal.value || document.activeElement !== e) return
+  const c = getCaret(e)
+  if (!c || c.start !== c.end || c.start === blockCaret) return
+  vim.goal = null
+  showBlock()
+}
+
+watch(
+  () => vim.enabled && vim.mode,
+  (m) => {
+    const e = el.value
+    if (!e || document.activeElement !== e) return
+    if (m === 'normal') return showBlock()
+    // To insert mode (e.g. from the toolbar): a plain caret where the block was.
+    markChip(null)
+    blockCaret = null
+    const c = getCaret(e)
+    if (c && c.start !== c.end) setCaret(e, c.start)
+  },
+)
+
+/** Vim's turn at a key. True when it took it. */
+function onVimKey(e: KeyboardEvent): boolean {
+  const ed = el.value
+  if (!ed) return false
+  if (vim.mode === 'insert') {
+    if (e.key !== 'Escape' && !(e.ctrlKey && e.key === '[')) return false
+    e.preventDefault()
+    setCaret(ed, escapeCaret(current(), getCaret(ed)?.start ?? 0))
+    vim.mode = 'normal'
+    vim.pending = ''
+    vim.goal = null
+    showBlock()
+    return true
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return false
+  const r = vimKey(vim.pending, e.key, current(), getCaret(ed)?.start ?? 0)
+  if (!r) return false
+  e.preventDefault()
+  vim.pending = r.pending
+  let row = r.row
+  if (row && (row.action === 'down' || row.action === 'up') && typeof row.place === 'object') {
+    // j and k keep to the column they started from, across shorter lines.
+    vim.goal ??= row.place.column
+    row = { ...row, place: { column: vim.goal } }
+  } else if (row || r.caret !== undefined) vim.goal = null
+  if (r.mode) vim.mode = r.mode
+  if (r.text !== undefined) handle.replace(r.text, { caret: r.caret ?? 0 })
+  else if (r.caret !== undefined) setCaret(ed, r.caret)
+  if (row) emit('vim', row)
+  showBlock()
+  return true
+}
+
 function onKeydown(e: KeyboardEvent) {
   if (e.isComposing || e.keyCode === 229) return
+  if (vim.enabled && onVimKey(e)) return
   const mod = e.ctrlKey || e.metaKey
   switch (e.key) {
     case 'Enter':
@@ -268,7 +370,14 @@ function onKeydown(e: KeyboardEvent) {
 
 function insertText(s: string) {
   // execCommand keeps the browser's undo stack intact and fires `input`.
-  if (!document.execCommand('insertText', false, s)) {
+  internal = true
+  let ok: boolean
+  try {
+    ok = document.execCommand('insertText', false, s)
+  } finally {
+    internal = false
+  }
+  if (!ok) {
     const e = el.value!
     const t = current()
     const c = getCaret(e) ?? { start: t.length, end: t.length }
@@ -282,6 +391,11 @@ function onPaste(e: ClipboardEvent) {
   e.preventDefault()
   const text = e.clipboardData?.getData('text/plain') ?? ''
   if (!text) return
+  if (vimNormal.value && el.value) {
+    // Pasting types: insert mode, at the cursor.
+    setCaret(el.value, getCaret(el.value)?.start ?? 0)
+    vim.mode = 'insert'
+  }
   if (!/[\r\n]/.test(text.trim())) {
     insertText(text.trim())
     return
@@ -323,6 +437,7 @@ function revealSoon() {
 
 function onFocus() {
   focused = true
+  document.addEventListener('selectionchange', onSelectionChange)
   noteFocus(props.editorKey)
   emit('focus')
   revealSoon()
@@ -331,6 +446,10 @@ function onFocus() {
 function onBlur() {
   focused = false
   composing = false
+  document.removeEventListener('selectionchange', onSelectionChange)
+  markChip(null)
+  blockCaret = null
+  vim.pending = ''
   noteBlur(props.editorKey)
   sanitize()
   void flush()
@@ -344,6 +463,7 @@ const handle: EditorHandle = {
     lastAt = -1
     if (document.activeElement !== e) e.focus({ preventScroll: true })
     setCaret(e, at)
+    showBlock()
     revealSoon()
   },
   caret() {
@@ -382,6 +502,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearTimeout(revealTimer)
+  document.removeEventListener('selectionchange', onSelectionChange)
   void flush()
   if (focused) noteBlur(props.editorKey)
   unregisterEditor(props.editorKey, handle)
@@ -392,7 +513,7 @@ onBeforeUnmount(() => {
   <div
     ref="el"
     class="editable"
-    :class="{ 'is-empty': empty }"
+    :class="{ 'is-empty': empty, 'vim-normal': vimNormal }"
     contenteditable="true"
     role="textbox"
     spellcheck="true"
