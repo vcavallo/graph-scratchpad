@@ -119,3 +119,7 @@ A sync round trip sends the fields not yet sent and gets back every field the se
 - With sync on, the server keeps a copy of everything, plus daily snapshots. Importing a backup while sync is on merges it in (its version of each entry wins) instead of replacing everything.
 - The app calls `navigator.storage.persist()` on first run; Settings shows whether it was granted. Installed PWAs on Android usually get it.
 - Uninstalling the app or clearing site data deletes everything on that device. Export a backup from Settings first.
+
+## License
+
+Public domain, under [the Unlicense](https://unlicense.org/): copy it, change it, sell it, no strings attached. See `LICENSE`.

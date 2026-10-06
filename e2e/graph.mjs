@@ -53,20 +53,16 @@ assert((await focusLabel()) === 'Welcome', 'back returns to the previous focus')
 await page.tap('.focus-card button:has-text("Open")')
 await page.waitForSelector('.editable.title')
 assert(!page.url().includes('graph'), 'Open leaves the graph for the node page')
-// Numbered lists: numbers in the outline, an ordered column in the graph.
+// Numbered lists (the welcome pad's sprinkler steps are one): numbers in the outline, an ordered column in the graph.
 await page.goto(BASE + '/')
 await page.waitForSelector('.outline .row')
 await page.tap('.row:has-text("Fix the sprinkler") .row-text')
 await page.keyboard.press('End')
 await page.keyboard.press('Enter')
 await page.keyboard.type('Dig out the broken head')
-await sleep(300)
-await page.tap('.row:has-text("Fix the sprinkler") .row-text')
-await page.tap('[aria-label="More actions"]')
-await page.tap('.sheet-action:has-text("Number the items inside")')
 await sleep(500)
 const nums = await page.$$eval('.row.numbered .num', (n) => n.map((x) => x.textContent))
-assert(JSON.stringify(nums) === '["1.","2.","3."]', 'children show numbers: ' + JSON.stringify(nums))
+assert(JSON.stringify(nums) === '["1.","2.","3.","4."]', 'children show numbers: ' + JSON.stringify(nums))
 // Enter at the end of an expanded parent adds its first child.
 assert((await page.$eval('.row.numbered:has-text("Dig out") .num', (n) => n.textContent)) === '1.', 'new first child is 1.')
 await page.tap('.row:has-text("Dig out") .row-text')
@@ -86,7 +82,7 @@ const col = await page.$$eval('.gnode.ordered', (gs) =>
     .map((g) => ({ n: Number(g.querySelector('text.num').textContent), y: g.getBoundingClientRect().y }))
     .sort((a, b) => a.n - b.n),
 )
-assert(col.length === 3 && col[0].y < col[1].y && col[1].y < col[2].y, 'numbered items stack in order: ' + JSON.stringify(col))
+assert(col.length === 4 && col.every((c, i) => i === 0 || col[i - 1].y < c.y), 'numbered items stack in order: ' + JSON.stringify(col))
 await shot(page, 'graph-numbered')
 
 console.log('console errors:', errors.length ? errors : 'none')

@@ -39,7 +39,7 @@ await page.waitForSelector('.outline .row')
 await sleep(300)
 assert(!(await hasCheck('Tap any line')), 'welcome notes have no checkbox')
 assert(await hasCheck('Fix the sprinkler'), 'welcome to-dos have one')
-assert((await page.innerText('.row:has-text("Fix the sprinkler") .row-progress')) === '0/2', 'a parent shows its progress')
+assert((await page.innerText('.row:has-text("Fix the sprinkler") .row-progress')) === '0/3', 'a parent shows its progress')
 
 // A new pad starts as a checklist, and Enter keeps it one.
 await newPad('Groceries')
