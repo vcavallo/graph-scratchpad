@@ -48,6 +48,14 @@ export const prefs = {
   set showDoneBacklinks(v: boolean) {
     write('gs.showDoneBacklinks', v ? '1' : null)
   },
+  /** Light or dark on this device; null follows the system. (index.html reads it too, before the first paint.) */
+  get theme(): 'light' | 'dark' | null {
+    const v = read('gs.theme')
+    return v === 'light' || v === 'dark' ? v : null
+  },
+  set theme(v: 'light' | 'dark' | null) {
+    write('gs.theme', v)
+  },
   /** Vim keys in the editor (for a computer keyboard). */
   get vim(): boolean {
     return read('gs.vim') === '1'

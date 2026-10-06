@@ -55,45 +55,45 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0f2b47;
-    --paper-raised: #143454;
-    --grid: #163655;
-    --grid-major: #1d4166;
-    --ink: #e9f1f8;
-    --ink-soft: #a9c0d6;
-    --ink-faint: #7593b1;
-    --pencil: #7c93ab;
-    --rule: #24496f;
-    --guide: #2a5179;
-    --wash: rgba(255, 226, 102, 0.12);
-    --wash-strong: rgba(255, 226, 102, 0.3);
-    --focus: #8cc2ff;
-    --danger: #ff8b80;
-    --danger-wash: rgba(255, 120, 108, 0.14);
-    --on-ink: #0f2b47;
-    --shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.45);
+/* Dark ("blueprint"): set on <html> as data-theme="dark" by the system's
+   preference or by Settings → Appearance (see index.html and lib/theme.ts). */
+:root[data-theme='dark'] {
+  --paper: #0f2b47;
+  --paper-raised: #143454;
+  --grid: #163655;
+  --grid-major: #1d4166;
+  --ink: #e9f1f8;
+  --ink-soft: #a9c0d6;
+  --ink-faint: #7593b1;
+  --pencil: #7c93ab;
+  --rule: #24496f;
+  --guide: #2a5179;
+  --wash: rgba(255, 226, 102, 0.12);
+  --wash-strong: rgba(255, 226, 102, 0.3);
+  --focus: #8cc2ff;
+  --danger: #ff8b80;
+  --danger-wash: rgba(255, 120, 108, 0.14);
+  --on-ink: #0f2b47;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.45);
 
-    --hl-item: rgba(124, 174, 255, 0.26);
-    --hl-item-ink: #c4dcff;
-    --hl-place: rgba(110, 224, 150, 0.24);
-    --hl-place-ink: #aef3c5;
-    --hl-person: rgba(255, 140, 196, 0.24);
-    --hl-person-ink: #ffc6e1;
-    --hl-pad: rgba(180, 160, 255, 0.24);
-    --hl-pad-ink: #d9d0ff;
-    --hl-t2: rgba(255, 200, 90, 0.24);
-    --hl-t2-ink: #ffdb94;
-    --hl-t3: rgba(90, 210, 200, 0.24);
-    --hl-t3-ink: #a6eee7;
-    --hl-t4: rgba(255, 150, 120, 0.24);
-    --hl-t4-ink: #ffc4ae;
-    --hl-t5: rgba(170, 220, 90, 0.24);
-    --hl-t5-ink: #d2f2a0;
+  --hl-item: rgba(124, 174, 255, 0.26);
+  --hl-item-ink: #c4dcff;
+  --hl-place: rgba(110, 224, 150, 0.24);
+  --hl-place-ink: #aef3c5;
+  --hl-person: rgba(255, 140, 196, 0.24);
+  --hl-person-ink: #ffc6e1;
+  --hl-pad: rgba(180, 160, 255, 0.24);
+  --hl-pad-ink: #d9d0ff;
+  --hl-t2: rgba(255, 200, 90, 0.24);
+  --hl-t2-ink: #ffdb94;
+  --hl-t3: rgba(90, 210, 200, 0.24);
+  --hl-t3-ink: #a6eee7;
+  --hl-t4: rgba(255, 150, 120, 0.24);
+  --hl-t4-ink: #ffc4ae;
+  --hl-t5: rgba(170, 220, 90, 0.24);
+  --hl-t5-ink: #d2f2a0;
 
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 *,
@@ -1422,10 +1422,8 @@ body:has(.edit-toolbar) .toasts {
   color: var(--wash-strong);
 }
 
-@media (prefers-color-scheme: dark) {
-  .toast-action {
-    color: #8a6a00;
-  }
+:root[data-theme='dark'] .toast-action {
+  color: #8a6a00;
 }
 
 /* ------------------------------------------------------------ settings */
