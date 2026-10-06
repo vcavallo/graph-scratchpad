@@ -21,6 +21,8 @@ export type Api = Remote<Store> & {
   syncEnable(on: boolean): Promise<SyncStatus>
   /** Resolves after the first sync attempt (or a few seconds, whichever is first). */
   syncReady(): Promise<SyncStatus>
+  /** A message for the sync plugin in the worker (plugins/sync.ts). */
+  syncMessage(msg: unknown): Promise<unknown>
 }
 
 export class ApiError extends Error {
@@ -59,6 +61,7 @@ export const syncState = reactive<SyncStatus>({
   cursor: 0,
   autoEnabled: false,
   labels: '',
+  events: '',
 })
 
 // Sync calls don't count as writes: a sync that merges something reports it with a 'changed' message.
@@ -134,7 +137,13 @@ function call(method: string, args: unknown[]): Promise<unknown> {
 
 function toPlain(v: unknown): unknown {
   if (v === null || typeof v !== 'object') return v
-  return JSON.parse(JSON.stringify(v))
+  // Most arguments are plain data and clone as they are (a CryptoKey included);
+  // Vue's reactive proxies can't, so those go through JSON.
+  try {
+    return structuredClone(v)
+  } catch {
+    return JSON.parse(JSON.stringify(v))
+  }
 }
 
 export const api = new Proxy({} as Api, {

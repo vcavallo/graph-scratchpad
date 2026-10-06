@@ -7,6 +7,7 @@ import { Store, StoreError } from './store'
 import type { DbInfo } from './types'
 import type { WorkerRequest, WorkerMessage } from './protocol'
 import { SyncRunner } from './syncRunner'
+import { syncPlugin } from '@/plugins/sync'
 
 interface WorkerScope {
   postMessage(msg: WorkerMessage): void
@@ -43,6 +44,9 @@ const SYNC_CALLS: Record<string, (args: unknown[]) => Promise<unknown>> = {
   },
   syncEnable: (args) => sync!.setEnabled(args[0] === true),
   syncReady: () => sync!.ready(),
+  // The sync plugin's own messages (its Settings screen signing in, say).
+  syncMessage: async (args) =>
+    syncPlugin.message ? syncPlugin.message(args[0], { reconnect: async () => void (await sync!.reconnect()) }) : null,
 }
 
 function handle(req: WorkerRequest): void {
@@ -178,7 +182,7 @@ async function open(): Promise<void> {
     storage = 'memory'
   }
   store = new Store(wrapOo1(db))
-  sync = new SyncRunner(store, new URL('/api/sync', self.location.origin).href, (status, changed) => {
+  sync = new SyncRunner(store, () => syncPlugin.connect(), (status, changed) => {
     scope.postMessage({ type: 'sync', status })
     if (changed) scope.postMessage({ type: 'changed' })
   })
