@@ -2060,6 +2060,25 @@ export class Store {
   }
 
   /**
+   * Forget everything on this device, as a fresh install has it: no lists and
+   * no sync state (the built-in kinds stay, untouched, and no welcome pad comes
+   * back). For switching this device to another account's lists, say. Nothing
+   * is sent: other devices and the server keep what they have.
+   */
+  resetDevice(): void {
+    this.db.tx(() => {
+      this.db.exec('DELETE FROM edges')
+      this.db.exec('DELETE FROM nodes')
+      this.db.exec('DELETE FROM sync_clock')
+      this.db.exec(
+        `DELETE FROM meta WHERE key IN ('inbox_id', 'sync_enabled', 'sync_epoch', 'sync_cursor', 'sync_schema')`,
+      )
+      this.db.exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1')`)
+      this.#ensureBuiltInCategories()
+    })
+  }
+
+  /**
    * Called with the server's database identity. A server we haven't synced
    * with (or one that was reset) gets everything again: every field is marked
    * unsent and we pull from the start. Returns true if that happened.

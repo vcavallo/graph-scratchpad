@@ -303,6 +303,28 @@ describe('sync', () => {
     expect(dump(a.s)).toEqual(dump(b.s))
   })
 
+  it('starts over on a reset device: none of its old lists go to the next server', async () => {
+    const first = makeServer()
+    const second = makeServer()
+    const other = await device(second, BASE + 50_000)
+    other.s.createChild(other.s.createPad('Theirs'), undefined, { text: 'their line' })
+    await other.sync()
+    const d = await device(first)
+    d.s.createChild(d.s.createPad('Mine'), undefined, { text: 'my line' })
+    await d.sync()
+    d.s.resetDevice()
+    expect(d.s.listPads()).toEqual([])
+    expect(d.s.syncInfo()).toMatchObject({ enabled: null, epoch: null, pending: 0 })
+    expect(d.s.getNode(PEOPLE_ID)?.text).toBe('People')
+    d.s.syncSetEnabled(true)
+    d.useServer(second)
+    await d.sync()
+    expect(d.s.listPads().map((p) => p.label)).toEqual(['Theirs'])
+    const seen = second.sync({ device: 'peek', since: 0, changes: [] }).changes
+    expect(seen.some((c) => c.v === 'Mine' || c.v === 'my line')).toBe(false)
+    expect(seen.some((c) => c.n === PEOPLE_ID)).toBe(false)
+  })
+
   it('fills a new or reset server from the devices', async () => {
     const server = makeServer()
     const a = await device(server)
