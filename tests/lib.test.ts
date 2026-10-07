@@ -3,6 +3,8 @@ import { fuzzyScore } from '../src/lib/fuzzy'
 import { labelize, makeToken, parseTokens, splitTokens } from '../src/lib/tokens'
 import { pasteLines, typedMarker } from '../src/lib/editorDom'
 import { linkContexts } from '../src/lib/relations'
+import { linkedIds, lineCount, toHtml, toMarkdown } from '../src/lib/markdownOut'
+import type { TreeNode } from '../src/db/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -160,5 +162,71 @@ describe('link relations', () => {
     const ctx = linkContexts(`Buy elbows at ${makeToken(A)} before Saturday. Then rest`).get(A)!
     expect(ctx.before).toBe('buy elbows at')
     expect(ctx.after).toBe('before saturday')
+  })
+})
+
+describe('copying lines out as markdown', () => {
+  let n = 0
+  const line = (text: string, o: Partial<TreeNode> = {}, children: TreeNode[] = []): TreeNode => ({
+    id: `id-${++n}`,
+    kind: 'item',
+    text,
+    done: false,
+    collapsed: false,
+    numbered: false,
+    task: false,
+    links: 0,
+    category: null,
+    ref: null,
+    children,
+    ...o,
+  })
+  const names: Record<string, string> = { [A]: 'Hardware store', [B]: 'Sam' }
+  const name = (id: string) => names[id]
+
+  const project = line('Fix the sprinkler', { task: true, numbered: true }, [
+    line(`Buy elbows at ${makeToken(A)}`, { task: true, done: true }),
+    line(`Ask ${makeToken(B)} which zone`, { task: true }, [line('zone 3, by the fence'), line('or 4')]),
+    line('Test it', { task: true }),
+  ])
+
+  it('writes nesting, numbers, checkboxes, and links as names', () => {
+    expect(toMarkdown([project], name)).toBe(
+      [
+        '- [ ] Fix the sprinkler',
+        '  1. [x] Buy elbows at Hardware store',
+        '  2. [ ] Ask Sam which zone',
+        '     - zone 3, by the fence',
+        '     - or 4',
+        '  3. [ ] Test it',
+      ].join('\n'),
+    )
+    expect(lineCount([project])).toBe(6)
+    expect(linkedIds([project])).toEqual([A, B])
+  })
+
+  it('pastes back in as the same outline', () => {
+    const shape = (ls: { text: string; task?: boolean; done?: boolean; children: unknown[] }[]): unknown =>
+      ls.map((l) => [l.text, !!l.task, !!l.done, shape(l.children as typeof ls)])
+    const back = pasteLines(toMarkdown([project], name))
+    expect(shape(back)).toEqual([
+      [
+        'Fix the sprinkler',
+        true,
+        false,
+        [
+          ['Buy elbows at Hardware store', true, true, []],
+          ['Ask Sam which zone', true, false, [['zone 3, by the fence', false, false, []], ['or 4', false, false, []]]],
+          ['Test it', true, false, []],
+        ],
+      ],
+    ])
+    // The numbered list stays numbered.
+    expect(back[0].children.every((c) => c.numbered)).toBe(true)
+  })
+
+  it('also makes HTML lists, escaped, for apps that paste rich text', () => {
+    expect(toHtml([line('a <b> & c', { task: true }, [line('d')])], name)).toBe('<ul><li>☐ a &lt;b&gt; &amp; c<ul><li>d</li></ul></li></ul>')
+    expect(toHtml([project], name)).toContain('<ol><li>☑ Buy elbows at Hardware store</li>')
   })
 })

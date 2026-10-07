@@ -81,6 +81,37 @@ await page.waitForSelector('.outline .row')
 await sleep(500)
 assert(same(await rows(), want), 'the same after a reload')
 
+// And out again, for other apps: a line with the items inside as markdown, one line, the whole pad.
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
+const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
+async function copyFromRow(rowText, action) {
+  await page.tap(`.row:has-text("${rowText}") .row-text`)
+  await page.tap('[aria-label="More actions"]')
+  await page.tap(`.sheet-action:has-text("${action}")`)
+  await page.waitForSelector('.toast:has-text("Copied")')
+  await sleep(200)
+  return clipboard()
+}
+const section = await copyFromRow('Garage cleanout', 'Copy line and the items inside')
+const wantSection = ['- Garage cleanout', '  1. Sort the shelves', '  2. [ ] Haul boxes to the dump', '     - [x] borrow the truck', '     - call the dump first', ''].join('\n')
+assert(section === wantSection, 'copies a line and the items inside as markdown: ' + JSON.stringify(section))
+const one = await copyFromRow('Haul boxes to the dump', 'Copy line')
+assert(one === 'Haul boxes to the dump', 'copies one line as text: ' + JSON.stringify(one))
+await page.tap('[aria-label="Hide keyboard"]')
+await page.tap('[aria-label="More"]')
+await page.tap('.sheet-action:has-text("Copy as markdown")')
+await page.waitForSelector('.toast:has-text("Copied “Weekend”")')
+await sleep(200)
+const pad = await clipboard()
+assert(pad.startsWith('# Weekend\n\n- Garage cleanout\n') && pad.includes('\n  - [ ] Buy PVC elbows\n    - 3/4-inch, not 1/2\n'), 'copies the pad as markdown: ' + JSON.stringify(pad))
+// Pasted into a new pad, it's the same outline.
+await newPad()
+await paste(pad)
+await sleep(700)
+assert((await page.innerText('.editable.title')).replace(/​/g, '').trim() === 'Weekend', 'pasted back: the same title')
+assert(same(await rows(), want), 'and the same outline: ' + JSON.stringify(await rows(), null, 1))
+// (The rest goes on in this copy of the pad.)
+
 // Into a line with text: lines indented under the first go inside it.
 await page.tap('.row:has-text("plain line") .row-text')
 await page.keyboard.press('End')
