@@ -230,6 +230,11 @@ function update(d: Neighborhood) {
     sim!.alpha(0)
     ticked()
     fit(lastInteraction > 0)
+    // The focus card below may change size as it updates: check once the fit has landed.
+    const started = Date.now()
+    refitTimer = setTimeout(() => {
+      if (lastInteraction < started && !allVisible()) fit()
+    }, 500)
   } else {
     sim!.alpha(0.7).restart()
     centerOn(byId.get(d.center))
