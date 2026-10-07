@@ -2,7 +2,9 @@
 
 A phone-first outliner that stores everything as a graph. Write nested lists of to-dos and notes; link any line to any other node with `@`; open a place like "Hardware store" to see every open to-do that points at it, across all your lists. It's an installable PWA that works offline, with all data in SQLite on the device, and it syncs between your devices through a small server of your own when it can reach one. Paste in a markdown draft and it keeps its nesting, checkboxes and numbering; on a computer, turn on Vim keys and edit in normal and insert mode.
 
-**Try it: https://graph-paper-xi.vercel.app.** It runs in your browser, and you can install it to your home screen as an app. Everything stays on your device: there's no account, and nothing you write is sent anywhere. That copy has no sync, so export a backup from Settings now and then, or [run your own](#run-it-yourself) to sync between your devices.
+**Try it: https://nodepaper.app.** It runs in your browser, and you can install it to your home screen as an app. It's free, with no account: everything stays on your device, and nothing you write is sent anywhere. Export a backup from Settings now and then.
+
+Graph Paper is free and open source, and you can [run your own](#run-it-yourself), sync server and all. If you'd rather not, [Node Paper](https://nodepaper.app) is this app with hosted sync between your devices. The sync is end-to-end encrypted: your notes are sealed on your device before they leave it, so the server can't read them. Your account is a Nostr key, and you pay in bitcoin over Lightning. The first day is free, and nothing is lost when it ends: your notes stay on your devices, and sync picks up where it left off when you pay. (This repo's own build, without the hosted sync, is at https://graph-paper-xi.vercel.app.)
 
 <p align="center">
   <img src="docs/screenshots/outline.png" width="260" alt="A pad called Saturday: a numbered list of to-dos and a grocery checklist, with links coloured by what they point at: green places, a pink person, an amber room. The bottom bar has tabs for Places and Rooms.">
