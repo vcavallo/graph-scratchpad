@@ -11,10 +11,10 @@ const tabs = computed(() => [
   { to: '/pads', label: 'Pads', icon: 'list', match: (p: string) => p.startsWith('/pads') || p.startsWith('/n/') },
   ...pinnedCategories.value.map((c) => ({ to: `/c/${c.id}`, label: c.name, icon: c.icon, match: (p: string) => p === `/c/${c.id}` })),
   {
-    to: '/contexts',
-    label: 'Contexts',
+    to: '/kinds',
+    label: 'Kinds',
     icon: 'grid',
-    match: (p: string) => p.startsWith('/contexts') || (p.startsWith('/c/') && !pinnedCategories.value.some((c) => p === `/c/${c.id}`)),
+    match: (p: string) => p.startsWith('/kinds') || (p.startsWith('/c/') && !pinnedCategories.value.some((c) => p === `/c/${c.id}`)),
   },
   { to: '/search', label: 'Search', icon: 'search', match: (p: string) => p.startsWith('/search') },
   {

@@ -16,7 +16,7 @@ await page.goto(BASE + '/')
 await page.waitForSelector('.outline .row')
 
 // A kind for projects, and Alex in People.
-await page.tap('.nav-tab:has-text("Contexts")')
+await page.tap('.nav-tab:has-text("Kinds")')
 await page.waitForSelector('.contexts-page')
 await page.tap('text=New kind')
 await page.waitForSelector('.dialog-input')

@@ -644,12 +644,12 @@ function openMore(row: T.FlatRow) {
     }
   }
   if (n.kind === 'item' || n.kind === 'place' || n.kind === 'person') {
-    // Any line can be a context (a place, a room, a project…) right where it is.
+    // Any line can have a kind (a place, a room, a project…) right where it is.
     const cat = categoryById(n.category)
     actions.push(
       cat
         ? { label: `Change kind (${cat.name})…`, icon: cat.icon, run: () => chooseCategory(n.id, labelOf(n), n.category) }
-        : { label: 'Make it a context…', icon: 'grid', run: () => chooseCategory(n.id, labelOf(n), null) },
+        : { label: 'Give it a kind…', icon: 'grid', run: () => chooseCategory(n.id, labelOf(n), null) },
     )
   }
   actions.push({ label: 'Delete', icon: 'trash', danger: true, run: () => deleteRow(n.id) })

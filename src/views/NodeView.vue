@@ -311,7 +311,7 @@ function openMenu() {
       ...sendActions({ id: props.id, label: titleLabel.value }, data.value ? subtreeIds(data.value.tree) : [props.id]),
       category.value
         ? { label: `Change kind (${category.value.name})…`, icon: category.value.icon, run: chooseKind }
-        : { label: 'Make it a context…', icon: 'grid', run: chooseKind },
+        : { label: 'Give it a kind…', icon: 'grid', run: chooseKind },
     )
   } else {
     actions.push({ label: 'Rename', icon: 'edit', run: editTitle })

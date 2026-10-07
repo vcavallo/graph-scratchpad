@@ -217,7 +217,7 @@ async function askPersist() {
             </button>
           </li>
         </ul>
-        <button type="button" class="btn" @click="newCategory"><Icon name="plus" :size="18" /> New kind of context</button>
+        <button type="button" class="btn" @click="newCategory"><Icon name="plus" :size="18" /> New kind</button>
       </section>
 
       <section class="card appearance-card">

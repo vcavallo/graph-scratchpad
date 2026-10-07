@@ -933,7 +933,7 @@ export class Store {
       // Folded, which shows off folding too.
       const more = add(pad, 'More to find (tap the arrow to open)')
       add(more, 'Paste a list from anywhere, markdown too, and it keeps its nesting, checkboxes and numbers. A line’s menu copies it back out the same way.')
-      add(more, 'Hardware store is a place. Make your own kinds of context, like Rooms or Projects, on the Contexts tab.')
+      add(more, 'Hardware store is a place. Make your own kinds, like Rooms or Projects, on the Kinds tab.')
       add(more, 'Install it from your browser’s menu (Install app, or Add to Home screen) to use it offline, like any app')
       add(more, 'On a computer? Settings → Keyboard turns on Vim keys.')
       this.setCollapsed(more, true)
@@ -1720,7 +1720,7 @@ export class Store {
   setCategoryProps(id: string, patch: CategoryProps): void {
     this.db.tx(() => {
       const r = this.#requireLive(id)
-      if (r.kind !== 'category') throw new StoreError('Not a kind of context', 'not_category')
+      if (r.kind !== 'category') throw new StoreError('Not a kind', 'not_category')
       let props: CategoryProps = {}
       try {
         props = r.props ? JSON.parse(r.props) : {}
@@ -1740,7 +1740,7 @@ export class Store {
     this.db.tx(() => {
       const r = this.#requireLive(id)
       if (r.kind === 'pad' || r.kind === 'relation' || r.kind === 'category') {
-        throw new StoreError('Pads and relations can’t be contexts', 'not_context')
+        throw new StoreError('Pads and relations can’t have a kind', 'not_context')
       }
       if (categoryId) {
         const c = this.#raw(categoryId)

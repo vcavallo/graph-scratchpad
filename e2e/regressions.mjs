@@ -80,13 +80,13 @@ await sleep(300)
 assert(await page.isVisible('.picker'), 'picker reopens on a second @ at the same spot')
 await page.keyboard.press('Escape')
 
-// 6. Any line can be a context, right where it is.
+// 6. Any line can have a kind, right where it is.
 await page.keyboard.press('End')
 await page.keyboard.press('Enter')
 await page.keyboard.type('Garden center')
 await sleep(700)
 await page.tap('[aria-label="More actions"]')
-await page.tap('.sheet-action:has-text("Make it a context")')
+await page.tap('.sheet-action:has-text("Give it a kind")')
 await page.tap('.sheet-action:has-text("Places")')
 await sleep(600)
 assert((await outline(page)).at(-1) === 'Garden center', 'the line stays in its list: ' + (await outline(page)).at(-1))
