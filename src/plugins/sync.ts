@@ -42,6 +42,8 @@ export interface SyncPlugin {
   message?(msg: unknown, ctx: { reconnect(): Promise<void> }): Promise<unknown>
   /** How the welcome pad ends: where your lists are kept, and how to sync them. */
   welcome?: WelcomeLine[]
+  /** Lines the welcome pad starts with (a build's own "new here?"). */
+  welcomeIntro?: WelcomeLine[]
 }
 
 const TIMEOUT = 30_000

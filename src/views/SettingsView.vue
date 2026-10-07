@@ -14,7 +14,7 @@ import { newCategory, togglePinned } from '@/lib/contextActions'
 import { setVimEnabled, vim } from '@/state/vim'
 import SyncSettings from '@/plugins/SyncSettings.vue'
 import { setTheme, theme, type ThemeChoice } from '@/lib/theme'
-import { APP_NAME } from '@/lib/appName'
+import { APP_NAME, APP_SITE } from '@/lib/appName'
 
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -331,6 +331,9 @@ async function askPersist() {
     <template v-else>
       <section class="card">
         <h2 class="section-title">About</h2>
+        <p v-if="APP_SITE" class="about-site">
+          <a :href="APP_SITE" target="_blank" rel="noopener">Learn more about {{ APP_NAME }}</a>
+        </p>
         <dl class="facts">
           <div><dt>Version</dt><dd>{{ version }}, built {{ buildTime }}</dd></div>
           <div v-if="info"><dt>Entries</dt><dd>{{ info.nodeCount }} live, {{ info.edgeCount }} connections</dd></div>
