@@ -38,6 +38,11 @@ interface SimNode extends SimulationNodeDatum, GraphNode {
   y: number
   r: number
   text: string
+  /**
+   * In a crowded graph, a bullet two or more steps out: its label gives way
+   * where it would cover a nearer one, and shows again as you zoom in.
+   */
+  minor: boolean
   /** Position in a numbered list (0-based), or null for free-floating nodes. */
   order: number | null
 }
@@ -172,6 +177,7 @@ function update(d: Neighborhood) {
       y: (anchor?.y ?? 0) + (Math.random() - 0.5) * 120,
       r: 0,
       text: '',
+      minor: false,
       order: null,
     }
     Object.assign(node, n)
@@ -179,8 +185,9 @@ function update(d: Neighborhood) {
     // Contexts (places, people, rooms…) are drawn alike, whatever their node kind.
     const base = n.tone != null ? RADIUS.place : RADIUS[n.kind]
     node.r = n.id === d.center ? base + 5 : node.order !== null ? 10 : base
-    // Numbered items always get a label: the order is the point.
-    node.text = !busy || major || node.order !== null ? truncate(n.label, n.id === d.center ? 26 : 22) : ''
+    // Every bullet has a label. Numbered ones always show it (the order is the point).
+    node.text = truncate(n.label, n.id === d.center ? 26 : 22)
+    node.minor = busy && !major && node.order === null
     // The focus stays put; everything else is free (unless being dragged).
     if (n.id === d.center) {
       node.fx = node.x
@@ -308,11 +315,15 @@ function render() {
     )
   nodes.select('text.num').text((n) => (numbered(n) ? String(n.order! + 1) : ''))
   // Numbered items read like an outline: label to the right. Others: label below.
+  // (Offsets in em: labels keep their size on screen as you zoom; see setLabelScale.)
   nodes
     .select('text.label')
     .attr('text-anchor', (n) => (n.order !== null && n.id !== focusId.value ? 'start' : 'middle'))
-    .attr('x', (n) => (n.order !== null && n.id !== focusId.value ? n.r + 6 : 0))
-    .attr('y', (n) => (n.order !== null && n.id !== focusId.value ? 4 : n.r + 15))
+    // A few units clear of the rim (they grow with the outline as you zoom), then the label's own spacing.
+    .attr('x', (n) => (n.order !== null && n.id !== focusId.value ? n.r + 2 : 0))
+    .attr('dx', (n) => (n.order !== null && n.id !== focusId.value ? '0.35em' : null))
+    .attr('y', (n) => (n.order !== null && n.id !== focusId.value ? 0 : n.r + 3))
+    .attr('dy', (n) => (n.order !== null && n.id !== focusId.value ? '0.35em' : '1.05em'))
     .text((n) => n.text)
   nodes.call(dragBehavior)
   nodes.on('click', (_ev, n) => setFocus(n.id))
@@ -336,8 +347,57 @@ function ticked() {
   gEdgeLabels
     ?.selectAll<SVGTextElement, SimEdge>('text')
     .attr('x', (e) => (e.source.x + e.target.x) / 2)
-    .attr('y', (e) => (e.source.y + e.target.y) / 2 - 3)
+    .attr('y', (e) => (e.source.y + e.target.y) / 2)
+    .attr('dy', '-0.3em')
   gNodes.selectAll<SVGGElement, SimNode>('g.gnode').attr('transform', (n) => `translate(${n.x},${n.y})`)
+  scheduleDeclutter()
+}
+
+/**
+ * Labels keep about the same size on screen as you zoom: they shrink a little
+ * when zoomed out to fit (to three quarters), and don't grow when zoomed in, so
+ * zooming in makes room between them for the far ones.
+ */
+function setLabelScale(k: number) {
+  const onScreen = Math.min(1, Math.max(0.75, k))
+  svg.value?.style.setProperty('--label-k', String(onScreen / k))
+}
+
+let declutterTimer: ReturnType<typeof setTimeout> | undefined
+let lastDeclutter = 0
+
+/** Declutter soon, at most every 120 ms (it measures every label). */
+function scheduleDeclutter() {
+  if (declutterTimer) return
+  const wait = Math.max(0, 120 - (performance.now() - lastDeclutter))
+  declutterTimer = setTimeout(() => {
+    declutterTimer = undefined
+    lastDeclutter = performance.now()
+    declutter()
+  }, wait)
+}
+
+/** Far labels give way where they'd cover a nearer one, or a bullet; the rest always show. */
+function declutter() {
+  if (!gNodes) return
+  const labels: { n: SimNode; el: SVGTextElement }[] = []
+  const shown: DOMRect[] = []
+  gNodes.selectAll<SVGGElement, SimNode>('g.gnode').each(function (n) {
+    const el = this.querySelector<SVGTextElement>('text.label')
+    if (el && n.text) labels.push({ n, el })
+    const disc = this.querySelector('rect.disc')
+    if (disc) shown.push(disc.getBoundingClientRect())
+  })
+  const rank = (n: SimNode) => (n.id === focusId.value ? 0 : n.minor ? 2 + n.hop : 1)
+  labels.sort((a, b) => rank(a.n) - rank(b.n))
+  const covers = (a: DOMRect, b: DOMRect) =>
+    a.left < b.right + 2 && b.left < a.right + 2 && a.top < b.bottom + 1 && b.top < a.bottom + 1
+  for (const { n, el } of labels) {
+    const box = el.getBoundingClientRect()
+    const hide = n.minor && shown.some((s) => covers(s, box))
+    el.classList.toggle('label-hidden', hide)
+    if (!hide) shown.push(box)
+  }
 }
 
 const dragging = new Set<string>()
@@ -410,7 +470,7 @@ function fit(animate = true) {
   let maxX = -Infinity
   let maxY = -Infinity
   for (const n of simNodes) {
-    const labelW = n.text.length * CHAR_W
+    const labelW = (n.minor ? 0 : n.text.length) * CHAR_W
     // Column items carry their label to the right; others centre it below.
     const right = n.order !== null && n.id !== focusId.value
     minX = Math.min(minX, n.x - (right ? n.r : Math.max(n.r, labelW / 2)) - 8)
@@ -442,6 +502,8 @@ onMounted(() => {
     .scaleExtent([0.2, 5])
     .on('zoom', (ev) => {
       root.attr('transform', ev.transform.toString())
+      setLabelScale(ev.transform.k)
+      scheduleDeclutter()
       // Programmatic moves (fit, centre) have no source event.
       if (ev.sourceEvent) lastInteraction = Date.now()
     })
@@ -458,7 +520,9 @@ onMounted(() => {
     .force('charge', forceManyBody<SimNode>().strength((n) => (n.order !== null ? -30 : -340)).distanceMax(500))
     .force(
       'collide',
-      forceCollide<SimNode>((n) => (n.order !== null ? n.r + 1 : n.r + 10 + (n.text.length * CHAR_W) / 3)).iterations(2),
+      forceCollide<SimNode>((n) =>
+        n.order !== null ? n.r + 1 : n.r + 10 + ((n.minor ? 0 : n.text.length) * CHAR_W) / 3,
+      ).iterations(2),
     )
     // Phones are portrait: pull harder sideways than vertically.
     .force('x', forceX<SimNode>(0).strength(0.06))
@@ -472,6 +536,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearTimeout(refitTimer)
+  clearTimeout(declutterTimer)
   sim?.stop()
   if (svg.value) select(svg.value).on('.zoom', null)
 })
