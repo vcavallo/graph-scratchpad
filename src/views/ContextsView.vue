@@ -34,11 +34,11 @@ const meta = (e: ContextEntry) => (e.openBacklinks ? `${e.openBacklinks} open` :
 <template>
   <div class="page contexts-page">
     <header class="topbar">
-      <h1 class="page-title">Contexts</h1>
+      <h1 class="page-title">Kinds</h1>
       <span class="spacer" />
       <button type="button" class="btn btn-primary btn-small" @click="addKind"><Icon name="plus" :size="18" /> New kind</button>
     </header>
-    <p class="note">The things you link to, by kind. Pin a kind to give it its own tab.</p>
+    <p class="note">Pages for the things you link to, by kind. Pin a kind to give it its own tab.</p>
 
     <ul class="list">
       <li v-for="c in categories" :key="c.id" class="list-item">
@@ -46,7 +46,7 @@ const meta = (e: ContextEntry) => (e.openBacklinks ? `${e.openBacklinks} open` :
           <span class="kind-icon" :class="`tone-${c.tone}`"><Icon :name="c.icon" :size="18" /></span>
           <span class="list-text">
             <span class="list-label">{{ c.name }}</span>
-            <span class="list-context">{{ c.count }} {{ c.count === 1 ? 'context' : 'contexts' }}<template v-if="c.open">, {{ c.open }} open</template></span>
+            <span class="list-context">{{ c.count }} {{ c.count === 1 ? 'page' : 'pages' }}<template v-if="c.open">, {{ c.open }} open</template></span>
           </span>
         </RouterLink>
         <button

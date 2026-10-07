@@ -13,7 +13,9 @@ export const router = createRouter({
     { path: '/n/:id', component: NodeView, props: true },
     { path: '/n/:id/graph', component: () => import('./views/GraphView.vue'), props: true },
     { path: '/c/:id', component: () => import('./views/CategoryView.vue'), props: true },
-    { path: '/contexts', component: () => import('./views/ContextsView.vue') },
+    { path: '/kinds', component: () => import('./views/ContextsView.vue') },
+    // The Kinds tab was called Contexts.
+    { path: '/contexts', redirect: '/kinds' },
     // Older links to the two built-in kinds.
     { path: '/places', redirect: `/c/${PLACES_ID}` },
     { path: '/people', redirect: `/c/${PEOPLE_ID}` },

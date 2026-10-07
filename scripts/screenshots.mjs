@@ -156,7 +156,7 @@ await page.addInitScript((seed) => {
 try {
   await page.goto(BASE + '/')
   await page.waitForSelector('.outline .row')
-  await page.goto(BASE + '/#/settings')
+  await page.goto(BASE + '/#/settings?tab=sync')
   await page.waitForSelector('input[type=file]', { state: 'attached' })
   await page.setInputFiles('input[type=file]', file)
   await page.tap('button:has-text("Replace")')

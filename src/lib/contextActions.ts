@@ -9,7 +9,7 @@ import { confirmDialog, openSheet, promptDialog, reportError, toast, type SheetA
 /** Ask for a new kind's name and make it. Resolves to its id, or null. */
 export async function newCategory(): Promise<string | null> {
   const name = await promptDialog({
-    title: 'New kind of context',
+    title: 'New kind',
     message: 'Rooms, Projects, Stores… Anything you link to that’s worth a list of its own.',
     confirmLabel: 'Make it',
     placeholder: 'Rooms',
@@ -29,7 +29,7 @@ export function chooseCategory(nodeId: string, label: string, current: string | 
   const set = (catId: string | null, name?: string) =>
     void api
       .setCategory(nodeId, catId)
-      .then(() => toast(catId ? `“${label}” is in ${name}` : `“${label}” isn’t a context now`))
+      .then(() => toast(catId ? `“${label}” is in ${name}` : `“${label}” has no kind now`))
       .catch(reportError)
   const actions: SheetAction[] = categories.value.map((c) => ({
     label: c.id === current ? `${c.name} ✓` : c.name,
@@ -44,7 +44,7 @@ export function chooseCategory(nodeId: string, label: string, current: string | 
       if (id) set(id, categoryById(id)?.name ?? 'it')
     },
   })
-  if (current) actions.push({ label: 'Not a context', icon: 'x', run: () => set(null) })
+  if (current) actions.push({ label: 'No kind', icon: 'x', run: () => set(null) })
   openSheet({ title: `What is “${label}”?`, actions })
 }
 
@@ -57,7 +57,7 @@ export function togglePinned(id: string): void {
   }
   api
     .setCategoryProps(id, { pinned: !c.pinned })
-    .then(() => toast(c.pinned ? `${c.name} is under Contexts now` : `${c.name} has a tab now`))
+    .then(() => toast(c.pinned ? `${c.name} is under Kinds now` : `${c.name} has a tab now`))
     .catch(reportError)
 }
 
@@ -97,13 +97,13 @@ export function openCategoryMenu(id: string): void {
         run: async () => {
           const ok = await confirmDialog({
             title: `Delete ${c.name}?`,
-            message: `The ${c.count} ${c.count === 1 ? 'context' : 'contexts'} in it stay where they are, with everything that links to them; they just won’t have a kind. You can restore it from Trash.`,
+            message: `The ${c.count} ${c.count === 1 ? 'page' : 'pages'} in it stay where they are, with everything that links to them; they just won’t have a kind. You can restore it from Trash.`,
             confirmLabel: 'Delete',
             danger: true,
           })
           if (!ok) return
           await api.deleteSubtree(id).catch(reportError)
-          void router.replace('/contexts')
+          void router.replace('/kinds')
         },
       },
     ],
