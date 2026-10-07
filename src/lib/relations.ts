@@ -9,9 +9,10 @@ import { splitTokens } from './tokens'
 
 /**
  * Bump when the guessing changes, so the Store recomputes what it derives
- * from link text (phrases; and nodes.ref, since version 2).
+ * from link text (phrases; and nodes.ref, since version 2). Version 3 also
+ * rebuilds facts' links, which imports used to leave out.
  */
-export const PHRASES_VERSION = '2'
+export const PHRASES_VERSION = '3'
 
 export interface LinkContext {
   /** Up to six words before the link, within its clause, as written. */

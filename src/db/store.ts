@@ -90,6 +90,8 @@ interface SiblingRow {
 
 const NODE_COLS = 'id, kind, text, done, collapsed, created_at, updated_at, deleted_at, sort_key, numbered, task, purged, category, props, facts'
 const MAX_LABEL_DEPTH = 3
+/** Nodes with links going out: link tokens in their text, or facts. */
+const LINKS_OUT = `(instr(text, '[[') > 0 OR (facts IS NOT NULL AND facts <> '[]'))`
 
 export class StoreError extends Error {
   constructor(
@@ -196,7 +198,7 @@ export class Store {
     // Link phrases are derived from text: fill them in after an upgrade or a change in how they're guessed.
     if (this.#meta('link_phrases') !== PHRASES_VERSION) {
       db.tx(() => {
-        for (const r of db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE instr(text, '[[') > 0`)) {
+        for (const r of db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE ${LINKS_OUT}`)) {
           this.#reconcileLinks(r.id, r.text)
         }
         this.#setMeta('link_phrases', PHRASES_VERSION)
@@ -2260,10 +2262,13 @@ export class Store {
       // Links follow the text. New nodes may also complete links other nodes already had in their text.
       const relink = new Set(textChanged)
       if (fresh.size > 40) {
-        for (const r of this.db.all<{ id: string }>(`SELECT id FROM nodes WHERE instr(text, '[[') > 0`)) relink.add(r.id)
+        for (const r of this.db.all<{ id: string }>(`SELECT id FROM nodes WHERE ${LINKS_OUT}`)) relink.add(r.id)
       } else {
         for (const id of fresh) {
-          for (const r of this.db.all<{ id: string }>('SELECT id FROM nodes WHERE instr(text, ?) > 0', [`[[${id}]]`])) {
+          for (const r of this.db.all<{ id: string }>('SELECT id FROM nodes WHERE instr(text, ?) > 0 OR instr(facts, ?) > 0', [
+            `[[${id}]]`,
+            `"${id}"`,
+          ])) {
             relink.add(r.id)
           }
         }
@@ -2376,8 +2381,8 @@ export class Store {
       }
       // Files from before kinds of context don't have the built-in ones.
       this.#ensureBuiltInCategories()
-      // Links are derived from text: rebuild them (with their phrases) rather than trust the file.
-      for (const r of this.db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE instr(text, '[[') > 0`)) {
+      // Links are derived from text and facts: rebuild them (with their phrases) rather than trust the file.
+      for (const r of this.db.all<{ id: string; text: string }>(`SELECT id, text FROM nodes WHERE ${LINKS_OUT}`)) {
         this.#reconcileLinks(r.id, r.text)
       }
       // Pads from older exports may lack a root sort key.
