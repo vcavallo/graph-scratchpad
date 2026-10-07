@@ -4,6 +4,7 @@ import { labelize, makeToken, parseTokens, splitTokens } from '../src/lib/tokens
 import { pasteLines, typedMarker } from '../src/lib/editorDom'
 import { linkContexts } from '../src/lib/relations'
 import { linkedIds, lineCount, toHtml, toMarkdown } from '../src/lib/markdownOut'
+import { findUrls, urlAt } from '../src/lib/urls'
 import type { TreeNode } from '../src/db/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
@@ -228,5 +229,37 @@ describe('copying lines out as markdown', () => {
   it('also makes HTML lists, escaped, for apps that paste rich text', () => {
     expect(toHtml([line('a <b> & c', { task: true }, [line('d')])], name)).toBe('<ul><li>☐ a &lt;b&gt; &amp; c<ul><li>d</li></ul></li></ul>')
     expect(toHtml([project], name)).toContain('<ol><li>☑ Buy elbows at Hardware store</li>')
+  })
+})
+
+describe('web addresses in bullets', () => {
+  const found = (t: string) => findUrls(t).map((u) => [u.text, u.href])
+
+  it('finds full addresses, www. ones and bare names on common endings', () => {
+    expect(found('Read https://example.com/docs?a=1#b, then www.example.org and try.nodepaper.app.')).toEqual([
+      ['https://example.com/docs?a=1#b', 'https://example.com/docs?a=1#b'],
+      ['www.example.org', 'https://www.example.org'],
+      ['try.nodepaper.app', 'https://try.nodepaper.app'],
+    ])
+  })
+
+  it('leaves sentence punctuation out, but keeps brackets the address opened', () => {
+    expect(found('(see example.com)')).toEqual([['example.com', 'https://example.com']])
+    expect(found('the wiki: https://en.wikipedia.org/wiki/Fork_(software).')).toEqual([
+      ['https://en.wikipedia.org/wiki/Fork_(software)', 'https://en.wikipedia.org/wiki/Fork_(software)'],
+    ])
+    expect(found('“www.example.com”')).toEqual([['www.example.com', 'https://www.example.com']])
+  })
+
+  it('doesn’t link email addresses, file names or ordinary words', () => {
+    expect(found('mail alex@example.com about notes.txt, Node.js and e.g. this')).toEqual([])
+    expect(found('version 1.2.3 costs 3.50')).toEqual([])
+  })
+
+  it('says which address an offset is in', () => {
+    const t = 'go to example.com now'
+    expect(urlAt(t, 6)).toBe('https://example.com')
+    expect(urlAt(t, 16)).toBe('https://example.com')
+    expect(urlAt(t, 17)).toBeUndefined()
   })
 })

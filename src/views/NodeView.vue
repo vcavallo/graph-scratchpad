@@ -29,6 +29,7 @@ import { openLinkPicker } from '@/lib/linking'
 import type { VimRowAction } from '@/lib/vim'
 import { vimInsert } from '@/state/vim'
 import { vimOpen } from '@/lib/vimJumps'
+import { openUrl } from '@/lib/urls'
 import { chipClass, chipLabel, type LineMarker, type Shortcut } from '@/lib/editorDom'
 import { confirmDialog, openPicker, openSheet, pickerState, promptDialog, reportError, toast, type SheetAction } from '@/state/ui'
 
@@ -110,6 +111,7 @@ function onTitleVim(a: VimRowAction) {
   if (a.action === 'down' || a.action === 'first') outline.value?.focusFirst()
   else if (a.action === 'open-below') outline.value?.addChild('first')
   else if (a.action === 'undo') outline.value?.vimUndo()
+  else if (a.action === 'open' && a.url) openUrl(a.url)
   else if (a.action === 'open' && a.link) vimOpen(`/n/${a.link}`)
 }
 
