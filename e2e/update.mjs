@@ -1,4 +1,5 @@
-// The installed app notices a new deploy and offers a reload.
+// The installed app notices a new deploy and offers a reload; Settings → About
+// can look on demand ("Check for updates").
 // Usage: node e2e/update.mjs   (against the deploy server on 127.0.0.1:8742)
 import { launch, assert, sleep, watchConsole } from './lib.mjs'
 import { execSync } from 'node:child_process'
@@ -18,10 +19,15 @@ const before = await version()
 console.log('  running:', before)
 
 execSync('node scripts/deploy.mjs', { stdio: 'ignore' }) // same build: no update expected
+await page.tap('button:has-text("Check for updates")')
+await page.waitForSelector('.toast:has-text("You’re up to date")', { timeout: 15000 })
+assert(!(await page.isVisible('.banner-update')), 'Check for updates: up to date, no banner')
 execSync('npx vite build && node scripts/deploy.mjs', { stdio: 'ignore' }) // new build time → new bundle
-await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.update())
-await page.waitForSelector('.banner-update', { timeout: 15000 })
-assert(true, 'update banner appears after a new deploy')
+await sleep(1500)
+await page.tap('button:has-text("Check for updates")')
+await page.waitForSelector('.banner-update', { timeout: 20000 })
+const said = await page.waitForSelector('.toast:has-text("new version"), .toast:has-text("up to date")', { timeout: 20000 }).then((t) => t.textContent())
+assert(said.includes('A new version is ready'), 'Check for updates finds the new deploy, and the banner appears: ' + said)
 const origin0 = await page.evaluate(() => performance.timeOrigin)
 await page.tap('.banner-update button')
 let after = before

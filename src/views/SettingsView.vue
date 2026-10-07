@@ -15,6 +15,24 @@ import { setVimEnabled, vim } from '@/state/vim'
 import SyncSettings from '@/plugins/SyncSettings.vue'
 import { setTheme, theme, type ThemeChoice } from '@/lib/theme'
 import { APP_CONTACT, APP_NAME, APP_SITE, ISSUES_URL } from '@/lib/appName'
+import { checkForUpdate } from '@/state/update'
+
+// Settings → About: look for a new version now (it's also looked for when the app comes back to the front).
+const checking = ref(false)
+async function checkUpdates() {
+  checking.value = true
+  const found = await checkForUpdate()
+  checking.value = false
+  toast(
+    found === 'ready'
+      ? 'A new version is ready: tap Reload at the top.'
+      : found === 'current'
+        ? 'You’re up to date.'
+        : found === 'offline'
+          ? 'You’re offline, so it can’t look for updates now.'
+          : 'This copy doesn’t update itself.',
+  )
+}
 
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -335,7 +353,15 @@ async function askPersist() {
           <a :href="APP_SITE" target="_blank" rel="noopener">Learn more about {{ APP_NAME }}</a>
         </p>
         <dl class="facts">
-          <div><dt>Version</dt><dd>{{ version }}, built {{ buildTime }}</dd></div>
+          <div>
+            <dt>Version</dt>
+            <dd>
+              {{ version }}, built {{ buildTime }}
+              <button type="button" class="link-btn check-update" :disabled="checking" @click="checkUpdates">
+                {{ checking ? 'Checking…' : 'Check for updates' }}
+              </button>
+            </dd>
+          </div>
           <div v-if="info"><dt>Entries</dt><dd>{{ info.nodeCount }} live, {{ info.edgeCount }} connections</dd></div>
           <div v-if="info"><dt>Database</dt><dd>SQLite {{ info.sqliteVersion }}, schema {{ info.schemaVersion }}, {{ info.storage }}</dd></div>
           <div>
