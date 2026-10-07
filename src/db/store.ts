@@ -45,7 +45,19 @@ import {
 export interface StoreDeps {
   now?: () => number
   uuid?: () => string
+  /** How the welcome pad ends: how your lists are kept (the sync plugin's say). */
+  welcome?: WelcomeLine[]
 }
+
+/** A line of the welcome pad, with the lines under it. */
+export interface WelcomeLine {
+  text: string
+  /** A to-do (default: a note). */
+  task?: boolean
+  lines?: WelcomeLine[]
+}
+
+const WELCOME_ENDING: WelcomeLine[] = [{ text: 'Your lists live on this device. Settings → Sync & data → Export saves a backup.' }]
 
 export interface NodeInit {
   text?: string
@@ -166,9 +178,11 @@ export class Store {
   #now: () => number
   #uuid: () => string
   #hlc: Hlc
+  #welcome: WelcomeLine[]
 
   constructor(db: SqlDb, deps: StoreDeps = {}) {
     this.db = db
+    this.#welcome = deps.welcome ?? WELCOME_ENDING
     this.#now = deps.now ?? (() => Date.now())
     this.#uuid = deps.uuid ?? (() => crypto.randomUUID())
     db.exec('PRAGMA foreign_keys = ON')
@@ -921,7 +935,10 @@ export class Store {
       add(more, 'Install it from your browser’s menu (Install app, or Add to Home screen) to use it offline, like any app')
       add(more, 'On a computer? Settings → Keyboard turns on Vim keys.')
       this.setCollapsed(more, true)
-      add(pad, 'Your lists are saved on this device. Settings → Sync & data → Export saves a backup.')
+      const addAll = (parent: string, lines: WelcomeLine[]) => {
+        for (const l of lines) addAll(add(parent, l.text, l.task), l.lines ?? [])
+      }
+      addAll(pad, this.#welcome)
       add(store, 'Closes at 6 on Sundays')
       // The welcome pad is older than any real edit, and isn't sent by sync on its own (see syncPrepareJoin).
       this.db.exec(`UPDATE sync_clock SET hlc = '${ZERO_HLC}', local = 0`)

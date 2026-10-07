@@ -1,6 +1,6 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
 import { wrapOo1, type SqlDb } from '../src/db/sql'
-import { Store } from '../src/db/store'
+import { Store, type WelcomeLine } from '../src/db/store'
 
 let sqlite3: Awaited<ReturnType<typeof sqlite3InitModule>> | undefined
 
@@ -14,9 +14,9 @@ export async function makeDb(): Promise<SqlDb> {
  * A Store over a database (fresh by default) with a deterministic clock that
  * ticks 1 ms per reading, starting at `start`.
  */
-export async function makeStore(opts: { db?: SqlDb; start?: number } = {}): Promise<Store> {
+export async function makeStore(opts: { db?: SqlDb; start?: number; welcome?: WelcomeLine[] } = {}): Promise<Store> {
   let t = opts.start ?? 1_700_000_000_000
-  return new Store(opts.db ?? (await makeDb()), { now: () => ++t })
+  return new Store(opts.db ?? (await makeDb()), { now: () => ++t, welcome: opts.welcome })
 }
 
 /** Compact outline of a subtree: ["a", ["b", "c"]] style, using text. */
