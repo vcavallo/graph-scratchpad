@@ -14,7 +14,7 @@ import { newCategory, togglePinned } from '@/lib/contextActions'
 import { setVimEnabled, vim } from '@/state/vim'
 import SyncSettings from '@/plugins/SyncSettings.vue'
 import { setTheme, theme, type ThemeChoice } from '@/lib/theme'
-import { APP_NAME, APP_SITE } from '@/lib/appName'
+import { APP_CONTACT, APP_NAME, APP_SITE, ISSUES_URL } from '@/lib/appName'
 
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -338,6 +338,13 @@ async function askPersist() {
           <div><dt>Version</dt><dd>{{ version }}, built {{ buildTime }}</dd></div>
           <div v-if="info"><dt>Entries</dt><dd>{{ info.nodeCount }} live, {{ info.edgeCount }} connections</dd></div>
           <div v-if="info"><dt>Database</dt><dd>SQLite {{ info.sqliteVersion }}, schema {{ info.schemaVersion }}, {{ info.storage }}</dd></div>
+          <div>
+            <dt>Bugs and ideas</dt>
+            <dd>
+              Report a bug or ask for a feature in the <a :href="ISSUES_URL" target="_blank" rel="noopener">issues on GitHub</a
+              ><template v-if="APP_CONTACT">, or email <a :href="`mailto:${APP_CONTACT}`">{{ APP_CONTACT }}</a></template>.
+            </dd>
+          </div>
           <div>
             <dt>Source</dt>
             <dd><a href="https://github.com/vcavallo/graph-scratchpad" target="_blank" rel="noopener">github.com/vcavallo/graph-scratchpad</a>, public domain</dd>
