@@ -8,8 +8,9 @@
 
 import type { SyncRequest, SyncResponse, Transport } from '@/db/sync'
 import type { SyncNotice } from '@/db/protocol'
+import type { WelcomeLine } from '@/db/store'
 
-export type { SyncNotice }
+export type { SyncNotice, WelcomeLine }
 
 export interface SyncServerInfo {
   /** Shown in Settings. */
@@ -39,6 +40,8 @@ export interface SyncPlugin {
    * anything structured-cloneable. `reconnect` makes sync ask `connect` again.
    */
   message?(msg: unknown, ctx: { reconnect(): Promise<void> }): Promise<unknown>
+  /** How the welcome pad ends: where your lists are kept, and how to sync them. */
+  welcome?: WelcomeLine[]
 }
 
 const TIMEOUT = 30_000
@@ -73,4 +76,8 @@ export function sameSiteConnection(endpoint = '/api/sync'): SyncConnection {
 
 export const syncPlugin: SyncPlugin = {
   connect: async () => sameSiteConnection(),
+  welcome: [
+    { text: 'Your lists live on this device. Settings → Sync & data → Export saves a backup.' },
+    { text: 'To sync between your devices, run the small sync server that comes with the source. Settings → About links to it.' },
+  ],
 }

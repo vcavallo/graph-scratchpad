@@ -181,7 +181,7 @@ async function open(): Promise<void> {
     db = new sqlite3.oo1.DB(':memory:', 'c')
     storage = 'memory'
   }
-  store = new Store(wrapOo1(db))
+  store = new Store(wrapOo1(db), { welcome: syncPlugin.welcome })
   sync = new SyncRunner(store, () => syncPlugin.connect(), (status, changed) => {
     scope.postMessage({ type: 'sync', status })
     if (changed) scope.postMessage({ type: 'changed' })

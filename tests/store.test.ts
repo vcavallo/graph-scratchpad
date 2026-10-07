@@ -531,6 +531,31 @@ describe('inbox and seed', () => {
     expect(fresh.listByKind('place')[0]).toMatchObject({ label: 'Hardware store', openBacklinks: 2 })
     expect(fresh.seedIfEmpty()).toBeNull()
   })
+
+  it('ends the welcome pad with the lines it was given (the sync plugin’s)', async () => {
+    const ending = (st: Store, pad: string) => {
+      const lines = st.getTree(pad).children
+      const last = lines[lines.length - 1]
+      return { text: last.text, task: last.task, under: last.children.map((c) => [c.text, c.task, c.children.length]) }
+    }
+    const plain = await makeStore()
+    expect(ending(plain, plain.seedIfEmpty()!)).toEqual({
+      text: 'Your lists live on this device. Settings → Sync & data → Export saves a backup.',
+      task: false,
+      under: [],
+    })
+    const own = await makeStore({
+      welcome: [{ text: 'Kept here', lines: [{ text: 'Set up sync', task: true, lines: [{ text: 'How' }] }, { text: 'Or not' }] }],
+    })
+    expect(ending(own, own.seedIfEmpty()!)).toEqual({
+      text: 'Kept here',
+      task: false,
+      under: [
+        ['Set up sync', true, 1],
+        ['Or not', false, 0],
+      ],
+    })
+  })
 })
 
 describe('malformed sort keys from imports', () => {
