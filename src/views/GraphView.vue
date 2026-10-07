@@ -465,16 +465,15 @@ function fit(animate = true) {
   const bottom = (card?.offsetHeight ?? 0) + 24
   const w = el.clientWidth
   const h = Math.max(120, el.clientHeight - top - bottom)
+  // Fit the bullets, with a little room for labels: a readable zoom matters more than
+  // every long label fitting (pan to read the ones that run off the edge).
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
   for (const n of simNodes) {
-    const labelW = (n.minor ? 0 : n.text.length) * CHAR_W
-    // Column items carry their label to the right; others centre it below.
-    const right = n.order !== null && n.id !== focusId.value
-    minX = Math.min(minX, n.x - (right ? n.r : Math.max(n.r, labelW / 2)) - 8)
-    maxX = Math.max(maxX, n.x + (right ? n.r + 6 + labelW : Math.max(n.r, labelW / 2)) + 8)
+    minX = Math.min(minX, n.x - n.r - 24)
+    maxX = Math.max(maxX, n.x + n.r + 24)
     minY = Math.min(minY, n.y - n.r - 12)
     maxY = Math.max(maxY, n.y + n.r + 28)
   }
