@@ -805,6 +805,8 @@ a {
   justify-content: space-around;
   height: calc(var(--nav-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
+  /* On a wide screen the bar spans it, but its tabs keep to the page's column. */
+  padding-inline: max(0px, calc((100% - 760px) / 2));
   background: var(--paper-raised);
   border-top: 1px solid var(--rule);
 }
