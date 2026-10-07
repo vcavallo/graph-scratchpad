@@ -12,6 +12,7 @@ import { NO_RELATION_ID } from '@/db/types'
 import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
 import { sendActions } from '@/lib/sendTo'
+import { copyPage } from '@/lib/copy'
 import EditToolbar from '@/components/EditToolbar.vue'
 import Icon from '@/components/Icon.vue'
 import KindIcon from '@/components/KindIcon.vue'
@@ -296,6 +297,14 @@ function openMenu() {
   if (!node.value) return
   if (isRelation.value) return openRelationMenu()
   const actions: SheetAction[] = [{ label: 'Show graph', icon: 'graph', run: () => router.push(`/n/${props.id}/graph`) }]
+  const tree = data.value?.tree
+  if (tree) {
+    actions.push({
+      label: 'Copy as markdown',
+      icon: 'copy',
+      run: () => copyPage(tree, kind.value === 'pad', titleLabel.value),
+    })
+  }
   if (kind.value === 'item' || kind.value === 'place' || kind.value === 'person') {
     actions.push(
       { label: 'Move to…', icon: 'move', run: moveTo },

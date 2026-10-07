@@ -26,6 +26,7 @@ const PATHS: Record<string, string> = {
   graph: `${circle(6, 6, 2.5)}${circle(18, 9, 2.5)}${circle(9, 18, 2.5)}M8.4 6.8l7.2 1.6M7 8.4l1.4 7.2M16.3 10.9l-5.4 5.4`,
   undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
   move: 'M14 10l5 5-5 5M4 4v7a4 4 0 0 0 4 4h11',
+  copy: 'M9 9h11v11H9zM15 5V4H4v11h1',
   x: 'M6 6l12 12M18 6L6 18',
   download: 'M12 3v12M7 10l5 5 5-5M5 20h14',
   upload: 'M12 20V8M7 13l5-5 5 5M5 4h14',

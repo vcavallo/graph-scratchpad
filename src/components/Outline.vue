@@ -22,6 +22,7 @@ import { categoryById } from '@/state/categories'
 import { chooseCategory } from '@/lib/contextActions'
 import { sendActions } from '@/lib/sendTo'
 import { noteToFact } from '@/lib/factActions'
+import { copyLine, copyWithChildren } from '@/lib/copy'
 import { placeOn, type VimPlace, type VimRowAction } from '@/lib/vim'
 import { vim, vimInsert, type YankedLine } from '@/state/vim'
 import { vimOpen } from '@/lib/vimJumps'
@@ -588,11 +589,21 @@ function setNumbered(n: TreeNode, numbered: boolean) {
   sync(api.setNumbered(n.id, numbered))
 }
 
+/** The line as it is now, with what's typed in its editor but not saved yet. */
+function current(n: TreeNode): TreeNode {
+  return { ...n, text: getEditor(key(n.id))?.text() ?? n.text }
+}
+
 function openMore(row: T.FlatRow) {
   const n = row.node
   const actions: SheetAction[] = [
     { label: 'Open', icon: 'open', run: () => router.push(`/n/${n.id}`) },
     { label: 'Move to…', icon: 'move', run: () => moveTo(row) },
+    // Out to other apps: the line, or the line and what's inside it as a markdown list.
+    { label: 'Copy line', icon: 'copy', run: () => copyLine(current(n)) },
+    ...(row.hasChildren
+      ? [{ label: 'Copy line and the items inside', icon: 'copy', run: () => copyWithChildren(current(n)) }]
+      : []),
     // Pull it into another list too (Today…), as a line that's only a link to it.
     // (A line that’s only a link sends the item it links to.)
     ...sendActions({ id: n.ref ?? n.id, label: labelOf(n) }, T.subtreeIds(n)),
