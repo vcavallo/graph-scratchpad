@@ -5,6 +5,8 @@
 // or the change came from outside.
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { findUrls, openUrl } from '@/lib/urls'
+import { urlHighlight } from '@/lib/urlHighlight'
 import {
   caretOnEdgeLine,
   getCaret,
@@ -92,6 +94,70 @@ function render(text: string) {
   if (!el.value) return
   renderEditor(el.value, text, refCache)
   updateEmpty()
+  markUrls()
+}
+
+// ------------------------------------------------------------ web addresses
+
+// Where the line's web addresses are (live ranges over its text), to underline and to open.
+let urls: { range: Range; href: string }[] = []
+
+function markUrls() {
+  const hl = urlHighlight()
+  for (const u of urls) hl?.delete(u.range)
+  urls = []
+  const e = el.value
+  if (!e) return
+  // Runs of text between chips: an address never crosses one.
+  let run: Text[] = []
+  const at = (offset: number): [Text, number] => {
+    for (const t of run) {
+      if (offset <= t.data.length) return [t, offset]
+      offset -= t.data.length
+    }
+    const last = run[run.length - 1]
+    return [last, last.data.length]
+  }
+  const endRun = () => {
+    for (const f of run.length ? findUrls(run.map((t) => t.data).join('')) : []) {
+      const r = document.createRange()
+      r.setStart(...at(f.start))
+      r.setEnd(...at(f.end))
+      urls.push({ range: r, href: f.href })
+      hl?.add(r)
+    }
+    run = []
+  }
+  e.childNodes.forEach((c) => (c.nodeType === Node.TEXT_NODE ? run.push(c as Text) : endRun()))
+  endRun()
+}
+
+function urlAtPoint(x: number, y: number): string | null {
+  for (const u of urls) {
+    for (const r of u.range.getClientRects()) {
+      if (x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 1 && y <= r.bottom + 1) return u.href
+    }
+  }
+  return null
+}
+
+// Tapping an address in a line you're not editing opens it; while editing,
+// a tap puts the caret in it (to fix it), and Ctrl/⌘-click opens it.
+let openOnClick: string | null = null
+
+function onMouseDown(e: MouseEvent) {
+  openOnClick = null
+  if (e.button !== 0 || (focused && !(e.ctrlKey || e.metaKey))) return
+  const href = urlAtPoint(e.clientX, e.clientY)
+  if (!href) return
+  e.preventDefault() // don't start editing
+  openOnClick = href
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!el.value || !urls.length) return
+  const opens = (!focused || e.ctrlKey || e.metaKey) && !!urlAtPoint(e.clientX, e.clientY)
+  el.value.style.cursor = opens ? 'pointer' : ''
 }
 
 async function flush(): Promise<void> {
@@ -197,6 +263,7 @@ function onInput(e: Event) {
     if (focused) setCaret(e2, 0)
   }
   updateEmpty()
+  markUrls()
   schedule()
   if (!ie.isComposing && (ie.inputType ?? 'insertText').startsWith('insert')) {
     if (!checkMarker()) checkAt()
@@ -439,6 +506,14 @@ function onPaste(e: ClipboardEvent) {
 }
 
 function onClick(e: MouseEvent) {
+  if (openOnClick) {
+    const href = openOnClick
+    openOnClick = null
+    e.preventDefault()
+    e.stopPropagation()
+    openUrl(href)
+    return
+  }
   const chip = (e.target as HTMLElement).closest?.('.chip[data-id]') as HTMLElement | null
   if (chip) {
     e.preventDefault()
@@ -531,6 +606,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearTimeout(revealTimer)
+  for (const u of urls) urlHighlight()?.delete(u.range)
   document.removeEventListener('selectionchange', onSelectionChange)
   void flush()
   if (focused) noteBlur(props.editorKey)
@@ -559,5 +635,7 @@ onBeforeUnmount(() => {
     @blur="onBlur"
     @paste="onPaste"
     @click="onClick"
+    @mousedown="onMouseDown"
+    @mousemove="onMouseMove"
   />
 </template>

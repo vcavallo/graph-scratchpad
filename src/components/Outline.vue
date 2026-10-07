@@ -26,6 +26,7 @@ import { copyLine, copyWithChildren } from '@/lib/copy'
 import { placeOn, type VimPlace, type VimRowAction } from '@/lib/vim'
 import { vim, vimInsert, type YankedLine } from '@/state/vim'
 import { vimOpen } from '@/lib/vimJumps'
+import { openUrl } from '@/lib/urls'
 import { parseTokens } from '@/lib/tokens'
 
 const props = withDefaults(defineProps<{ root: TreeNode; reload: () => Promise<void>; addLabel?: string }>(), {
@@ -288,6 +289,7 @@ function onVim(row: T.FlatRow, a: VimRowAction) {
     case 'undo':
       return vimUndo()
     case 'open':
+      if (a.url) return openUrl(a.url)
       return vimOpen(`/n/${a.link ?? row.node.ref ?? row.node.id}`)
     case 'indent':
     case 'outdent': {

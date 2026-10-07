@@ -2037,3 +2037,14 @@ kbd {
   font-size: 17px;
   font-weight: 700;
 }
+
+/* Web addresses in bullets: links. In editors they're underlined with a CSS
+   highlight (EditableText marks them); read-only text has real links. */
+::highlight(gp-url) {
+  color: var(--focus);
+  text-decoration: underline;
+}
+.textview .url {
+  color: var(--focus);
+  text-decoration: underline;
+}

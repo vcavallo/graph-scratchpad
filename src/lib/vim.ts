@@ -2,6 +2,7 @@
 // for desktop keyboards. Pure: it reads a line's text (with [[uuid]] tokens,
 // each one cell) and caret offset, and says what to do; the editor applies it.
 
+import { urlAt } from './urls'
 import { tokenRe } from './tokens'
 
 export type VimMode = 'normal' | 'insert'
@@ -15,7 +16,7 @@ export type VimRowAction =
   | { action: 'open-below' | 'open-above' | 'delete' | 'indent' | 'outdent' | 'fold' | 'unfold' | 'fold-toggle' }
   | { action: 'yank' | 'put-below' | 'put-above' | 'undo' }
   /** gx: open the link under the cursor, or (with no link) the line itself. */
-  | { action: 'open'; link?: string }
+  | { action: 'open'; link?: string; url?: string }
 
 export interface VimResult {
   /** Keys typed so far of a two-key command ("d" of "dd"). */
@@ -165,7 +166,10 @@ export function vimKey(pending: string, key: string, text: string, caret: number
   }
   if (pending === 'g') {
     if (key === 'g') return { pending: '', row: { action: 'first' } }
-    if (key === 'x') return { pending: '', row: { action: 'open', link: n ? linkAt(text, cs, i) : undefined } }
+    if (key === 'x') {
+      const url = n ? urlAt(text, cs[i]) : undefined
+      return { pending: '', row: url ? { action: 'open', url } : { action: 'open', link: n ? linkAt(text, cs, i) : undefined } }
+    }
     return { pending: '' }
   }
   if (pending === 'y') return key === 'y' ? { pending: '', row: { action: 'yank' } } : { pending: '' }

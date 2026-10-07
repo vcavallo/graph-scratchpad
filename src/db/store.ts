@@ -941,6 +941,7 @@ export class Store {
       // Folded, which shows off folding too.
       const more = add(pad, 'More to find (tap the arrow to open)')
       add(more, 'Paste a list from anywhere, markdown too, and it keeps its nesting, checkboxes and numbers. A line’s menu copies it back out the same way.')
+      add(more, 'Web addresses in a line are links: tap one to open it, or tap the words around it to edit the line.')
       add(more, 'Hardware store is a place. Make your own kinds, like Rooms or Projects, on the Kinds tab.')
       add(more, 'Install it from your browser’s menu (Install app, or Add to Home screen) to use it offline, like any app')
       add(more, 'On a computer? Settings → Keyboard turns on Vim keys.')
