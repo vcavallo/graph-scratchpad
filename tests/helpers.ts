@@ -14,9 +14,11 @@ export async function makeDb(): Promise<SqlDb> {
  * A Store over a database (fresh by default) with a deterministic clock that
  * ticks 1 ms per reading, starting at `start`.
  */
-export async function makeStore(opts: { db?: SqlDb; start?: number; welcome?: WelcomeLine[] } = {}): Promise<Store> {
+export async function makeStore(
+  opts: { db?: SqlDb; start?: number; welcome?: WelcomeLine[]; welcomeIntro?: WelcomeLine[] } = {},
+): Promise<Store> {
   let t = opts.start ?? 1_700_000_000_000
-  return new Store(opts.db ?? (await makeDb()), { now: () => ++t, welcome: opts.welcome })
+  return new Store(opts.db ?? (await makeDb()), { now: () => ++t, welcome: opts.welcome, welcomeIntro: opts.welcomeIntro })
 }
 
 /** Compact outline of a subtree: ["a", ["b", "c"]] style, using text. */

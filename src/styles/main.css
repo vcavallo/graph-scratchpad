@@ -2030,3 +2030,10 @@ kbd {
 .settings-tabs button {
   flex: 1;
 }
+
+/* Settings → About: the build's own website, when it has one. */
+.about-site {
+  margin: 0 0 14px;
+  font-size: 17px;
+  font-weight: 700;
+}

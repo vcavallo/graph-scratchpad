@@ -546,8 +546,13 @@ describe('inbox and seed', () => {
     })
     const own = await makeStore({
       welcome: [{ text: 'Kept here', lines: [{ text: 'Set up sync', task: true, lines: [{ text: 'How' }] }, { text: 'Or not' }] }],
+      welcomeIntro: [{ text: 'New here? Read about it' }],
     })
-    expect(ending(own, own.seedIfEmpty()!)).toEqual({
+    const ownPad = own.seedIfEmpty()!
+    // The intro goes first, before the tour; the ending last.
+    expect(own.getTree(ownPad).children[0].text).toBe('New here? Read about it')
+    expect(own.getTree(ownPad).children[1].text).toBe('Tap any line to edit it. Enter starts a new line.')
+    expect(ending(own, ownPad)).toEqual({
       text: 'Kept here',
       task: false,
       under: [
