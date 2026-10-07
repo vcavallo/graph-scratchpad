@@ -1137,6 +1137,20 @@ describe('facts', () => {
     expect(s.getBacklinks(acme)).toHaveLength(1)
   })
 
+  it('keeps a fact’s link through an export and import, and repairs a database that lost it', async () => {
+    const { alex, acme, cofounder } = setup()
+    s.addFact(alex, cofounder, acme)
+    const fresh = await makeStore()
+    fresh.importAll(JSON.parse(JSON.stringify(s.exportAll())))
+    expect(fresh.getBacklinks(acme)).toMatchObject([{ fact: true, phrase: 'cofounder of', source: { id: alex } }])
+    // An import from before this was fixed left the link out; the next start puts it back.
+    fresh.db.exec(`DELETE FROM edges WHERE src = ? AND type = 'link'`, [alex])
+    fresh.db.exec(`UPDATE meta SET value = '0' WHERE key = 'link_phrases'`)
+    expect(fresh.getBacklinks(acme)).toEqual([])
+    const restarted = await makeStore({ db: fresh.db })
+    expect(restarted.getBacklinks(acme)).toMatchObject([{ fact: true, source: { id: alex } }])
+  })
+
   it('follows a renamed relation, and goes when removed', () => {
     const { alex, acme, cofounder } = setup()
     s.addFact(alex, cofounder, acme)

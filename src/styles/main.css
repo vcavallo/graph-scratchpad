@@ -1589,14 +1589,15 @@ body:has(.edit-toolbar) .toasts {
   opacity: 0.55;
 }
 
+/* Graph labels keep their size on screen as you zoom (--label-k, set by GraphView). */
 .edge-label {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--label-k, 1));
   font-weight: 700;
   text-anchor: middle;
   fill: var(--hl-place-ink);
   paint-order: stroke;
   stroke: var(--paper);
-  stroke-width: 3.5px;
+  stroke-width: calc(3.5px * var(--label-k, 1));
   stroke-linejoin: round;
   pointer-events: none;
 }
@@ -1626,9 +1627,24 @@ body:has(.edit-toolbar) .toasts {
   stroke-linejoin: round;
 }
 
-.gnode.center text {
-  font-size: 14px;
+.gnode text.label {
+  font-size: calc(12px * var(--label-k, 1));
+  stroke-width: calc(4px * var(--label-k, 1));
+}
+
+.gnode.center text.label {
+  font-size: calc(14px * var(--label-k, 1));
   font-weight: 750;
+}
+
+/* A far label giving way to a nearer one; it shows again with room (zoom in). */
+.gnode text.label-hidden {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gnode text.label {
+    transition: opacity 0.15s;
+  }
 }
 
 .graph-legend {

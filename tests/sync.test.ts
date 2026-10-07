@@ -143,6 +143,22 @@ describe('sync', () => {
     expect(dump(b.s)).toEqual(dump(a.s))
   })
 
+  it('syncs a fact’s link, in small batches too', async () => {
+    const server = makeServer()
+    const a = await device(server, BASE, { batch: 2 })
+    const b = await device(server, BASE, { limit: 2 })
+    const alex = a.s.createNode('person', 'Alex')
+    const worksAt = a.s.keepRelation('works at')
+    const pad = a.s.createPad('P')
+    for (let i = 0; i < 4; i++) a.s.createChild(pad, undefined, { text: `i${i}` })
+    const shop = a.s.createNode('place', 'Shop') // created last: synced after the fact about it
+    a.s.addFact(alex, worksAt, shop)
+    await a.sync()
+    await b.sync()
+    expect(b.s.getBacklinks(shop)).toMatchObject([{ fact: true, phrase: 'works at', source: { id: alex } }])
+    expect(dump(b.s)).toEqual(dump(a.s))
+  })
+
   it('empties the trash everywhere', async () => {
     const server = makeServer()
     const a = await device(server)
