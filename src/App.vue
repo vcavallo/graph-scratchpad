@@ -11,6 +11,7 @@ import { dbState, syncState } from './db/api'
 import { router } from './router'
 import { APP_NAME } from './lib/appName'
 import { editing } from './state/focus'
+import { trackUpdates } from './state/update'
 import { closePicker, closeSheet, confirmState, pickerState, toast } from './state/ui'
 
 const { needRefresh, updateServiceWorker } = useRegisterSW({
@@ -19,7 +20,7 @@ const { needRefresh, updateServiceWorker } = useRegisterSW({
     toast('Ready to work offline')
   },
   onRegisteredSW(_url, reg) {
-    if (reg) setInterval(() => void reg.update(), 30 * 60 * 1000)
+    if (reg) trackUpdates(reg, needRefresh)
   },
 })
 

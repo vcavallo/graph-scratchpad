@@ -2050,3 +2050,9 @@ kbd {
   color: var(--focus);
   text-decoration: underline;
 }
+
+/* Settings → About: "Check for updates", beside the version. */
+.check-update {
+  margin-left: 6px;
+  font-size: 15px;
+}
