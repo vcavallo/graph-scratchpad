@@ -94,6 +94,31 @@ async function readBody(req) {
 
 /** /api/sync: GET → about this server; POST → one sync round trip; GET /events → change notifications. */
 async function handleSync(req, res, path) {
+  // Cross-site requests: a text/plain POST is a CORS "simple request" (no
+  // preflight), so without these two checks any web page in any browser that
+  // can reach this server could blind-write to it. The first-party client
+  // always sends application/json and is served from this origin, so both
+  // checks leave it untouched; non-browser clients send no Origin header.
+  // They run in proxy (SYNC_UPSTREAM) mode too: there they guard this
+  // server's upstream, which may itself be an older build.
+  if (path === '/api/sync' && req.method === 'POST') {
+    if (!String(req.headers['content-type'] ?? 'application/json').includes('application/json')) {
+      return json(res, 415, { ok: false, error: 'POST /api/sync requires application/json' })
+    }
+    const origin = req.headers.origin
+    if (origin) {
+      const same = (() => {
+        try {
+          return new URL(origin).host === req.headers.host
+        } catch {
+          return false
+        }
+      })()
+      // Values included on purpose: the usual cause is a proxy that rewrites
+      // the Host header, and the 403 should say what to fix.
+      if (!same) return json(res, 403, { ok: false, error: `Cross-origin request (origin ${origin}, host ${req.headers.host}); your proxy must preserve the Host header` })
+    }
+  }
   if (SYNC_UPSTREAM) return proxy(req, res)
   if (!sync) return json(res, 404, { ok: false, error: 'Sync is not set up on this server' })
   if (path === '/api/sync' && req.method === 'GET') {

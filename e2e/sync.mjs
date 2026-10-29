@@ -25,6 +25,16 @@ async function stopServer() {
 }
 const serverInfo = async () => (await fetch(BASE + '/api/sync')).json()
 
+// The sync API must refuse cross-site and non-JSON writes: a text/plain POST
+// is a CORS simple request, so a web page could blind-write without a preflight.
+async function crossOriginProtections() {
+  const post = (headers) => fetch(BASE + '/api/sync', { method: 'POST', headers, body: '{"device":"probe","since":0,"changes":[]}' }).then((r) => r.status)
+  assert((await post({ 'Content-Type': 'text/plain' })) === 415, 'non-JSON POST rejected')
+  assert((await post({ 'Content-Type': 'application/json', Origin: 'https://evil.example' })) === 403, 'foreign-origin POST rejected')
+  assert((await post({ 'Content-Type': 'application/json', Origin: BASE })) === 200, 'same-origin POST accepted')
+  assert((await fetch(BASE + '/api/sync', { method: 'OPTIONS' })).status === 405, 'preflight never passes')
+}
+
 /** Poll until fn() is truthy (or fail with the last value). */
 async function until(fn, msg, ms = 8000) {
   const end = Date.now() + ms

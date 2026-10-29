@@ -40,7 +40,7 @@ npm run build
 SYNC_DB=./sync/sync.sqlite3 npm run serve    # http://127.0.0.1:8742
 ```
 
-It listens on localhost only and has no accounts, so anyone who can reach it can read and write what it syncs. Put HTTPS in front of it somewhere private. The easy way is [Tailscale](https://tailscale.com): `tailscale serve --bg --https=443 http://127.0.0.1:8742` makes it `https://<machine>.<tailnet>.ts.net` on your own devices and nowhere else. Open that address on each device: the app finds the server and turns sync on by itself.
+It listens on localhost only and has no accounts, so anyone who can reach it can read and write what it syncs. Put HTTPS in front of it somewhere private. If you put a reverse proxy in front, make sure it preserves the Host header (on nginx: `proxy_set_header Host $host;`) — the sync API rejects requests whose Origin and Host disagree, so a proxy that rewrites Host makes the app's own writes fail with a 403. The easy way is [Tailscale](https://tailscale.com): `tailscale serve --bg --https=443 http://127.0.0.1:8742` makes it `https://<machine>.<tailnet>.ts.net` on your own devices and nowhere else. Open that address on each device: the app finds the server and turns sync on by itself.
 
 Settings for `server/serve.mjs`:
 
