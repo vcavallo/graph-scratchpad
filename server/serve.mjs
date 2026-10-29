@@ -77,6 +77,8 @@ function json(res, status, body) {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'Content-Length': Buffer.byteLength(data),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
   })
   res.end(data)
 }
@@ -220,6 +222,9 @@ const server = createServer(async (req, res) => {
     const headers = {
       'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      // The app is a single-user tool; nothing should frame it.
+      'X-Frame-Options': 'DENY',
       'Cache-Control': NO_CACHE.has(path)
         ? 'no-cache'
         : path.startsWith('/assets/')
