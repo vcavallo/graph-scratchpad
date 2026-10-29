@@ -5,7 +5,7 @@ import { labelize, makeToken, parseTokens, soleLink } from '../lib/tokens'
 import { fuzzyScore } from '../lib/fuzzy'
 import { PHRASES_VERSION, linkContexts } from '../lib/relations'
 import { textHash } from '../lib/textHash'
-import { Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
+import { HLC_RE, Hlc, UNKNOWN_HLC, ZERO_HLC, hlcWall } from './hlc'
 import {
   KINDS,
   NO_RELATION_ID,
@@ -2181,7 +2181,7 @@ export class Store {
         this.#setMeta('sync_schema', String(LATEST_SCHEMA_VERSION))
       }
       const valid = changes.filter(
-        (c) => c && UUID_RE.test(c.n) && SYNC_FIELDS.has(c.f) && typeof c.h === 'string' && c.h.length <= 80,
+        (c) => c && UUID_RE.test(c.n) && SYNC_FIELDS.has(c.f) && typeof c.h === 'string' && HLC_RE.test(c.h),
       )
       for (const c of valid) this.#hlc.observe(c.h)
       const nodeIds = [...new Set(valid.map((c) => c.n))]
