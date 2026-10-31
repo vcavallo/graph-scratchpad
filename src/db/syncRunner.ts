@@ -129,9 +129,19 @@ export class SyncRunner {
           this.status.available = true
           this.status.server = server.name
         }
-        await syncOnce(this.store, conn.send)
+        const result = await syncOnce(this.store, conn.send)
         this.#retryMs = 0
-        this.#set({ state: 'idle', lastSync: Date.now(), error: '' }, this.store.db.totalChanges() !== before)
+        // The server can skip our edits (clock validation, say). They were
+        // acked and will not be retried, so a clean-looking sync here would
+        // hide silent divergence: say so instead.
+        if (result.rejected > 0) {
+          this.#set(
+            { state: 'error', error: `${result.rejected} edit(s) were not accepted by the sync server - check this device's clock` },
+            this.store.db.totalChanges() !== before,
+          )
+        } else {
+          this.#set({ state: 'idle', lastSync: Date.now(), error: '' }, this.store.db.totalChanges() !== before)
+        }
       } catch (e) {
         const offline = e instanceof TypeError || (e instanceof DOMException && e.name === 'TimeoutError')
         this.#retryMs = Math.min(this.#retryMs ? this.#retryMs * 2 : 5000, MAX_RETRY)

@@ -34,6 +34,9 @@ export interface SyncResult {
   applied: number
   /** Fields sent. */
   pushed: number
+  /** Sent fields the server did not store (clock validation, say): these were
+   *  acked and will not be retried, so callers should surface the count. */
+  rejected: number
   cursor: number
 }
 
@@ -45,6 +48,7 @@ export interface SyncResult {
 export async function syncOnce(store: SyncableStore, send: Transport, batch = 2000): Promise<SyncResult> {
   let applied = 0
   let pushed = 0
+  let rejected = 0
   let cursor = 0
   for (let round = 0; round < 10_000; round++) {
     const info = store.syncInfo()
@@ -55,10 +59,11 @@ export async function syncOnce(store: SyncableStore, send: Transport, batch = 20
       if (store.syncBegin(res.epoch)) continue
     }
     store.syncAck(changes)
+    rejected += changes.length - res.accepted
     pushed += changes.length
     applied += store.syncApply(res.changes, { cursor: res.cursor, epoch: res.epoch })
     cursor = res.cursor
     if (changes.length < batch && !res.more) break
   }
-  return { applied, pushed, cursor }
+  return { applied, pushed, rejected, cursor }
 }

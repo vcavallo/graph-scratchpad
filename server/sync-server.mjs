@@ -7,6 +7,10 @@
 const NODE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const FIELD_RE = /^[a-z_]{1,32}$/
 const MAX_BATCH = 5000
+/** Must match src/db/hlc.ts's formatHlc/parseHlc: fixed-width wall-count-device, so plain string comparison orders clocks. */
+const HLC_RE = /^[0-9a-z]{9}-[0-9a-z]{4}-.{1,64}$/
+/** A clock stamped further ahead than this was not made by a real device clock; reject rather than let it dominate LWW forever. */
+const HLC_MAX_SKEW = 48 * 60 * 60 * 1000
 const MAX_VALUE = 200_000
 
 export class SyncError extends Error {
@@ -40,6 +44,28 @@ export class SyncServer {
     // Identifies this database. Devices that synced with a different one
     // (say, after the server's data was lost) send everything again.
     if (!this.#meta('epoch')) this.#setMeta('epoch', uuid())
+    this.#repair()
+  }
+
+  /** Clocks stored before write-side validation may be malformed or implausibly
+   *  far in the future: either way they would beat every honest write forever.
+   *  Restamp them (value unchanged, seq bumped so devices re-pull). */
+  #repair(now = Date.now()) {
+    const bad = this.#db.prepare('SELECT node, field, hlc FROM fields').all()
+      .filter((r) => !HLC_RE.test(r.hlc) || parseInt(r.hlc.slice(0, 9), 36) > now + HLC_MAX_SKEW)
+    if (!bad.length) return
+    const put = this.#db.prepare('UPDATE fields SET hlc = ?, seq = ? WHERE node = ? AND field = ?')
+    let seq = this.seq
+    this.#db.exec('BEGIN IMMEDIATE')
+    try {
+      bad.forEach((r, i) => put.run(`${(now + i + 1).toString(36).padStart(9, '0')}-0000-repair`, ++seq, r.node, r.field))
+      this.#setMeta('seq', String(seq))
+      this.#db.exec('COMMIT')
+    } catch (e) {
+      this.#db.exec('ROLLBACK')
+      throw e
+    }
+    for (const fn of this.#listeners) fn(seq, 'repair')
   }
 
   #meta(key) {
@@ -115,7 +141,8 @@ export class SyncServer {
       for (const c of changes) {
         if (!c || typeof c.n !== 'string' || !NODE_RE.test(c.n)) continue
         if (typeof c.f !== 'string' || !FIELD_RE.test(c.f)) continue
-        if (typeof c.h !== 'string' || !c.h || c.h.length > 80) continue
+        if (typeof c.h !== 'string' || !HLC_RE.test(c.h)) continue
+        if (parseInt(c.h.slice(0, 9), 36) > Date.now() + HLC_MAX_SKEW) continue
         const value = JSON.stringify(c.v ?? null)
         if (value.length > MAX_VALUE) continue
         const cur = get.get(c.n, c.f)
